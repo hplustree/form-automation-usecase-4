@@ -1,0 +1,129 @@
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build: .
+    container_name: siso-pipeline-api
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WEAVIATE_URL=http://weaviate:8080
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./temp_files:/app/temp_files
+      - ./temp_image_summaries:/app/temp_image_summaries
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - weaviate
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    networks:
+      - pipeline-network
+
+  # RQ Workers (configurable count via NUM_WORKERS)
+  workers:
+    build: .
+    container_name: siso-pipeline-workers
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - WEAVIATE_URL=http://weaviate:8080
+      - NUM_WORKERS=${NUM_WORKERS:-2}
+      - QUEUE_NAME=${QUEUE_NAME:-projects}
+    env_file:
+      - .env
+    volumes:
+      - ./app:/app/app
+      - ./templates:/app/templates
+      - ./temp_files:/app/temp_files
+      - ./temp_image_summaries:/app/temp_image_summaries
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - weaviate
+    # Use Python launcher to spawn NUM_WORKERS RQ processes with logs
+    command: python -m app.utils.worker_launcher
+    networks:
+      - pipeline-network
+
+  # PostgreSQL for LiteLLM
+  postgres:
+    image: postgres:16-alpine
+    container_name: siso-pipeline-postgres
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=1234
+      - POSTGRES_DB=litellm
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - pipeline-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # LiteLLM Proxy
+  litellm:
+    image: ghcr.io/berriai/litellm:main-latest
+    container_name: siso-pipeline-litellm
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_KEY_2=${OPENAI_API_KEY_2}
+      - OPENAI_API_KEY_3=${OPENAI_API_KEY_3}
+      - OPENAI_API_KEY_4=${OPENAI_API_KEY_4}
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+    command: --config /app/config.yaml --port 4000 --num_workers ${LITELLM_NUM_WORKERS:-25}
+    networks:
+      - pipeline-network
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: siso-pipeline-redis
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - pipeline-network
+
+  # Weaviate Vector Database
+  weaviate:
+    image: semitechnologies/weaviate:1.24.4
+    container_name: siso-pipeline-weaviate
+    ports:
+      - "8085:8080"
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      DEFAULT_VECTORIZER_MODULE: 'none'
+      ENABLE_MODULES: ''
+      CLUSTER_HOSTNAME: 'node1'
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    networks:
+      - pipeline-network
+
+volumes:
+  redis-data:
+  weaviate-data:
+  postgres-data:
+
+networks:
+  pipeline-network:
+    driver: bridge

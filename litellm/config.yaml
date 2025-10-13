@@ -1,0 +1,175 @@
+# LiteLLM Configuration File
+# Documentation: https://docs.litellm.ai/docs/proxy/config_settings
+
+# ===============================
+# MODEL SETTINGS
+# ===============================
+proxy:
+  host: 0.0.0.0                   # Listen on all network 
+  port: 4000                      # Change to any port you want
+  num_retries: 5
+  retry_status_codes: [429, 503]
+  timeout: 300
+  master_key: os.environ/LITELLM_MASTER_KEY
+  dashboard: true
+  log_level: "info"               # debug | info | warning | error
+
+
+model_list:
+  - model_name: gpt-5
+    litellm_params:
+      model: gpt-5 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+      tpm: 35000000
+  - model_name: gpt-5
+    litellm_params:
+      model: gpt-5 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_2
+      tpm: 1500000
+  - model_name: gpt-5
+    litellm_params:
+      model: gpt-5 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_3
+      tpm: 1500000
+  - model_name: gpt-5
+    litellm_params:
+      model: gpt-5 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_4
+      tpm: 1500000
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: gpt-5-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+      tpm: 170000000
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: gpt-5-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_2
+      tpm: 3500000
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: gpt-5-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_3
+      tpm: 3500000
+  - model_name: gpt-5-mini
+    litellm_params:
+      model: gpt-5-mini 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_4
+      tpm: 3500000
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+      tpm: 140000000
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_2
+      tpm: 3500000
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_3
+      tpm: 3500000
+  - model_name: gpt-4.1-mini
+    litellm_params:
+      model: gpt-4.1-mini 
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_4
+      tpm: 3500000
+  - model_name: gpt-4.1
+    litellm_params:
+      model: gpt-4.1
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+      tpm: 28000000
+  - model_name: gpt-4.1
+    litellm_params:
+      model: gpt-4.1
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_2
+      tpm: 700000
+  - model_name: gpt-4.1
+    litellm_params:
+      model: gpt-4.1
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_3
+      tpm: 700000
+  - model_name: gpt-4.1
+    litellm_params:
+      model: gpt-4.1
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_4
+      tpm: 700000
+  - model_name: text-embedding-3-large
+    litellm_params:
+      model: text-embedding-3-large
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY
+  - model_name: text-embedding-3-large
+    litellm_params:
+      model: text-embedding-3-large
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_2
+  - model_name: text-embedding-3-large
+    litellm_params:
+      model: text-embedding-3-large
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_3
+  - model_name: text-embedding-3-large
+    litellm_params:
+      model: text-embedding-3-large
+      api_base: https://api.openai.com/v1
+      api_key: os.environ/OPENAI_API_KEY_4
+
+# ===============================
+# APPLICATION SETTINGS
+# ===============================
+
+general_settings:
+  master_key: os.environ/LITELLM_MASTER_KEY
+  telemetry: true
+  telemetry_salt: os.environ/LITELLM_SALT_KEY
+  store_model_in_db: os.environ/STORE_MODEL_IN_DB
+  store_prompts_in_spend_logs: true
+  log_level: DEBUG
+# ===============================
+# LITELLM router SETTINGS
+# ===============================
+router_settings:
+  routing_strategy: usage-based-routing # Literal["simple-shuffle", "least-busy", "usage-based-routing","latency-based-routing"], default="simple-shuffle"
+  model_group_alias: {"gpt-5-mini": "gpt-5-mini"}
+  num_retries: 3
+  retry_delay: 15
+  timeout: 600
+  retry_strategy: exponential_backoff
+  max_parallel_requests: 20                                  # 30 seconds
+  redis_host: os.environ/REDIS_HOST # set this when using multiple litellm proxy deployments, load balancing state stored in redis
+  redis_port: os.environ/REDIS_PORT
+
+
+
+# # ===============================
+# # LITELLM BEHAVIOR SETTINGS
+# # ===============================
+# litellm_settings:
+#   num_retries: 3 # Retry failed calls up to 3 times
+#   request_timeout: 10 # Timeout after 10 seconds if the model doesn't respond
+#   fallbacks: # Model-specific fallback configuration
+#     - { "gpt-4o": ["gpt-4o-mini"] } # If gpt-4o fails, fallback to gpt-4o-mini
+#   context_window_fallbacks: # Fallback to smaller models for context window errors
+#     - { "gpt-4o": ["gpt-4o-mini"] }
+#   allowed_fails: 3 # Cooldown the model if it fails more than 3 times in a minute
+#   debug_level: info # Set logging level via environment variable (DEBUG, INFO, WARNING)
+#   log_format: json

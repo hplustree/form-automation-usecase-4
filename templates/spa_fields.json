@@ -1,0 +1,89 @@
+{
+  "code": "spa_agreement",
+  "name": "Share Purchase Agreement",
+  "defaultMode": "low",
+  "defaultModel": "gpt-5",
+  "isActive": true,
+  "fields": [
+    {
+      "code": "effective_date",
+      "label": "Effective Date",
+      "type": "llm",
+      "prompt": "What is the effective date of this Share Purchase Agreement as defined in the document?",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5",
+      "mode": "low",
+      "isActive": true
+    },
+    {
+      "code": "escrow_account_details",
+      "label": "Escrow Account Details",
+      "type": "llm",
+      "prompt": "Extract the description or details of the escrow account mentioned in this agreement, including the account location or bank.",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5",
+      "mode": "low",
+      "isActive": true
+    },
+    {
+      "code": "website",
+      "label": "Website",
+      "type": "manual",
+      "prompt": "",
+      "model": "",
+      "mode": "",
+      "isActive": true
+    },
+    {
+      "code": "business_model",
+      "label": "Business Model",
+      "type": "llm",
+      "prompt": "Provide a brief overview of the company, including its founding year and core business. Keep the summary under 100 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "effective_date",
+      "label": "Effective Date",
+      "type": "llm",
+      "prompt": "What is the effective date of this Share Purchase Agreement as defined in the document?",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5",
+      "mode": "low",
+      "isActive": true
+    },
+    {
+      "code": "escrow_details",
+      "label": "Escrow Account Details",
+      "type": "llm",
+      "prompt": "Extract the description or details of the escrow account mentioned in this agreement, including the account location or bank.",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5",
+      "mode": "low",
+      "isActive": true
+    },
+    {
+      "code": "termination_conditions",
+      "label": "Termination Conditions",
+      "type": "llm",
+      "prompt": "Summarize the condition under which this agreement may be terminated as per the termination clause.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "dispute_resolution",
+      "label": "Dispute Resolution",
+      "type": "llm",
+      "prompt": "How are disputes under this agreement to be resolved as per the Dispute Resolution clause?",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5",
+      "mode": "medium",
+      "isActive": true
+    }
+  ]
+}

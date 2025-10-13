@@ -1,0 +1,85 @@
+CONTRACT AGREEMENT
+
+This Contract Agreement ("Agreement") is entered into on January 15, 2025, between:
+
+COMPANY INFORMATION:
+Company Name: Acme Corporation GmbH
+Registration Number: DE123456789
+Address: Hauptstrasse 100, 10115 Berlin, Germany
+Contact: info@acmecorp.de
+
+AND
+
+Supplier Name: TechSupply Solutions Ltd.
+Registration Number: UK987654321
+Address: 123 Oxford Street, London, UK
+Contact: sales@techsupply.co.uk
+
+CONTRACT DETAILS:
+
+Contract Date: January 15, 2025
+Contract Number: CNT-2025-001
+Effective Date: February 1, 2025
+Expiry Date: January 31, 2026
+Contract Value: €500,000 (Five Hundred Thousand Euros)
+
+PAYMENT TERMS:
+- Payment Method: Bank Transfer
+- Payment Schedule: Quarterly installments
+- Due Date: 30 days from invoice date
+- Late Payment Fee: 2% per month
+
+KEY TERMS AND CONDITIONS:
+
+1. SCOPE OF WORK
+   The Supplier agrees to provide software development services including:
+   - Custom application development
+   - System integration
+   - Technical support and maintenance
+   - Training and documentation
+
+2. DELIVERABLES
+   - Phase 1: Requirements Analysis (30 days)
+   - Phase 2: Development (90 days)
+   - Phase 3: Testing and Deployment (30 days)
+   - Phase 4: Support Period (12 months)
+
+3. INTELLECTUAL PROPERTY
+   All intellectual property rights shall remain with Acme Corporation GmbH.
+   The Supplier grants a perpetual, worldwide license for use.
+
+4. CONFIDENTIALITY
+   Both parties agree to maintain strict confidentiality of all proprietary information
+   shared during the contract period and for 5 years thereafter.
+
+5. TERMINATION
+   Either party may terminate this agreement with 90 days written notice.
+   Immediate termination is permitted in case of material breach.
+
+6. LIABILITY
+   Maximum liability is limited to the total contract value.
+   Neither party shall be liable for indirect or consequential damages.
+
+7. GOVERNING LAW
+   This agreement shall be governed by the laws of Germany.
+   Disputes shall be resolved through arbitration in Berlin.
+
+AUTHORIZED SIGNATURES:
+
+For Acme Corporation GmbH:
+Name: Dr. Hans Mueller
+Title: Chief Executive Officer
+Date: January 15, 2025
+Signature: _____________________
+
+For TechSupply Solutions Ltd:
+Name: John Smith
+Title: Managing Director
+Date: January 15, 2025
+Signature: _____________________
+
+WITNESSES:
+Witness 1: Maria Schmidt, Legal Counsel
+Witness 2: Robert Johnson, Finance Director
+
+---END OF CONTRACT---
