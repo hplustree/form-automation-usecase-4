@@ -4,11 +4,12 @@ import json
 import hashlib
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from pydantic import BaseModel, Field, validator
 import redis as rqredis
 from rq import Queue
 from datetime import datetime
+import logging
 from app.logging_config import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -25,22 +26,202 @@ from pathlib import Path
 # Path to the templates directory
 TEMPLATES_DIR = Path("/app/templates")
 # For local development, fall back to the local path
-if not TEMPLATES_DIR.exists():
-    TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
+TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
 
 # Create templates directory if it doesn't exist
 TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
 
-def load_template(template_name: str = "spa_fields") -> Dict[str, Any]:
-    """Load field configurations from a JSON template file."""
-    template_path = str(TEMPLATES_DIR / f"{template_name}.json")
+def load_template(template_name: str) -> Dict[str, Any]:
+    """Load template configuration from JSON file."""
+    template_path = os.path.join("templates", f"{template_name}.json")
     try:
         with open(template_path, 'r') as f:
-            return json.load(f)
+            template = json.load(f)
+            # Log the loaded template for debugging
+            logger.info(f"Loaded template from {template_path}:")
+            logger.info(json.dumps(template, indent=2))
+            
+            # Verify fields structure
+            if 'fields' in template and isinstance(template['fields'], list):
+                logger.info(f"Template contains {len(template['fields'])} fields")
+                for field in template['fields']:
+                    logger.info(f"Field: {field.get('code')} - Model: {field.get('model')}")
+            
+            return template
     except FileNotFoundError:
-        raise ValueError(f"Template '{template_name}' not found in {TEMPLATES_DIR}")
-    except json.JSONDecodeError:
-        raise ValueError(f"Invalid JSON in template file: {template_path}")
+        error_msg = f"Template file not found: {template_path}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=404, detail=f"Template '{template_name}' not found")
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON in template file {template_path}: {str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=400, detail=error_msg)
+    except Exception as e:
+        error_msg = f"Error loading template {template_path}: {str(e)}"
+        logger.error(error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
+
+
+def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, Any]) -> Dict[str, str]:
+    """
+    Get model configuration with fallback mechanism.
+    Order of precedence:
+    1. Field-specific config (if model is specified)
+    2. Template defaults (defaultModel and defaultMode)
+    3. System defaults
+    """
+    logger.info(f"Getting model config for field: {field_config}")
+    logger.info(f"Template config: {template_config}")
+    
+    # System defaults (lowest priority)
+    defaults = {
+        "model": "gpt-5",
+        "mode": "low",
+        "type": "verbatim"
+    }
+    
+    # Template defaults (medium priority)
+    template_defaults = {
+        "model": template_config.get("defaultModel", defaults["model"]),
+        "mode": template_config.get("defaultMode", defaults["mode"]),
+        "type": field_config.get("typeOfPrompt", defaults["type"])
+    }
+    
+    # Field-specific config (highest priority)
+    field_specific = {
+        "model": field_config.get("model"),
+        "mode": field_config.get("mode"),
+        "type": field_config.get("typeOfPrompt")
+    }
+    
+    # Log the configuration sources
+    logger.info(f"System defaults: {defaults}")
+    logger.info(f"Template defaults: {template_defaults}")
+    logger.info(f"Field specific config: {field_specific}")
+    
+    # Build the final config with fallbacks
+    final_config = {}
+    for key in ["model", "mode", "type"]:
+        # Use field-specific value if it exists and is not empty, otherwise fall back to template defaults, then system defaults
+        final_config[key] = (
+            field_specific.get(key) or 
+            template_defaults.get(key) or 
+            defaults.get(key)
+        )
+    
+    logger.info(f"Final model config: {final_config}")
+    return final_config
+    
+    # Merge with order of precedence
+    config = {}
+    for key in ["model", "mode", "type"]:
+        field_val = field_specific.get(key)
+        template_val = template_defaults.get(key)
+        default_val = defaults[key]
+        
+        logger.info(f"\nKey: {key}")
+        logger.info(f"Field value: {field_val}")
+        logger.info(f"Template value: {template_val}")
+        logger.info(f"Default value: {default_val}")
+        
+        config[key] = field_val or template_val or default_val
+        logger.info(f"Selected value: {config[key]}")
+    
+    # Ensure model is valid
+    valid_models = {
+        "gpt-5", "claude", "llama", "gemini",
+        "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
+    }
+    if config["model"].lower() not in valid_models:
+        logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
+        config["model"] = "gpt-5"
+    
+    # Ensure mode is valid
+    valid_modes = {"low", "medium", "high"}
+    if config["mode"].lower() not in valid_modes:
+        logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
+        config["mode"] = "low"
+    
+    # Ensure type is valid
+    valid_types = {"verbatim", "summarize"}
+    if config["type"].lower() not in valid_types:
+        logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
+        config["type"] = "verbatim"
+    
+    return {
+        "model": str(config["model"]).strip().lower(),
+        "mode": str(config["mode"]).strip().lower(),
+        "type": str(config["type"]).strip().lower()
+    }
+    logger.info(f"Getting model config for field: {field_config}")
+    logger.info(f"Template config: {template_config}")
+    
+    # System defaults (lowest priority)
+    defaults = {
+        "model": "gpt-5",
+        "mode": "low",
+        "type": "verbatim"
+    }
+    logger.info(f"System defaults: {defaults}")
+    
+    # Template defaults (medium priority) - match the exact JSON field names
+    template_defaults = {
+        "model": template_config.get("defaultModel"),  # Matches JSON's defaultModel
+        "mode": template_config.get("defaultMode"),    # Matches JSON's defaultMode
+        "type": "verbatim"  # No template-level default for type
+    }
+    
+    logger.info(f"Template defaults: {template_defaults}")
+    
+    # Field-specific config (highest priority) - match the exact JSON field names
+    field_specific = {
+        "model": field_config.get("model"),
+        "mode": field_config.get("mode"),
+        "type": field_config.get("typeOfPrompt")  # Matches JSON's typeOfPrompt
+    }
+    logger.info(f"Field specific config: {field_specific}")
+    
+    # Merge with order of precedence
+    config = {}
+    for key in ["model", "mode", "type"]:
+        field_val = field_specific.get(key)
+        template_val = template_defaults.get(key)
+        default_val = defaults[key]
+        
+        logger.info(f"\nKey: {key}")
+        logger.info(f"Field value: {field_val}")
+        logger.info(f"Template value: {template_val}")
+        logger.info(f"Default value: {default_val}")
+        
+        config[key] = field_val or template_val or default_val
+        logger.info(f"Selected value: {config[key]}")
+    
+    # Ensure model is valid
+    valid_models = {
+        "gpt-5", "claude", "llama", "gemini",
+        "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
+    }
+    if config["model"].lower() not in valid_models:
+        logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
+        config["model"] = "gpt-5"
+    
+    # Ensure mode is valid
+    valid_modes = {"low", "medium", "high"}
+    if config["mode"].lower() not in valid_modes:
+        logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
+        config["mode"] = "low"
+    
+    # Ensure type is valid
+    valid_types = {"verbatim", "summarize"}
+    if config["type"].lower() not in valid_types:
+        logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
+        config["type"] = "verbatim"
+    
+    return {
+        "model": str(config["model"]).strip().lower(),
+        "mode": str(config["mode"]).strip().lower(),
+        "type": str(config["type"]).strip().lower()
+    }
 
 
 class FieldConfig(BaseModel):
@@ -49,6 +230,43 @@ class FieldConfig(BaseModel):
     model: str = Field(default="gpt-5", description="LLM model to use")
     mode: str = Field(default="low", description="Reasoning effort mode")
     type: str = Field(default="verbatim", description="Prompt type: verbatim or summarize")
+    
+    @validator('model', pre=True)
+    def validate_model(cls, v):
+        if not v:
+            logging.warning("Model not specified, using default 'gpt-5'")
+            return "gpt-5"
+            
+        valid_models = {
+            "gpt-5", "claude", "llama", "gemini",
+            "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
+        }
+        
+        # Convert to lowercase for case-insensitive comparison
+        v_lower = v.lower()
+        
+        if v_lower not in valid_models:
+            logging.warning(f"Model '{v}' not in valid models, using default 'gpt-5'")
+            return "gpt-5"
+            
+        logging.info(f"Using model: {v_lower}")
+        return v_lower
+    
+    @validator('mode')
+    def validate_mode(cls, v):
+        valid_modes = {"low", "medium", "high"}
+        if v.lower() not in valid_modes:
+            logging.warning(f"Mode '{v}' not valid, using default 'low'")
+            return "low"
+        return v.lower()
+    
+    @validator('type')
+    def validate_type(cls, v):
+        valid_types = {"verbatim", "summarize"}
+        if v.lower() not in valid_types:
+            logging.warning(f"Type '{v}' not valid, using default 'verbatim'")
+            return "verbatim"
+        return v.lower()
 
 
 class ProjectSubmitRequest(BaseModel):
@@ -125,18 +343,36 @@ async def submit_project(
             # Create a mapping of field codes to their configs
             field_map = {field['code']: field for field in template['fields']}
             
+            # Print the template fields for debugging
+            logger.debug(f"Template fields: {field_map}")
+            
             for field_name in requested_fields:
                 if field_name not in field_map:
                     raise ValueError(f"Field '{field_name}' not found in template")
-                    
+                        
                 field_config = field_map[field_name].copy()
+                logger.info(f"Processing field: {field_name}")
+                logger.info(f"Field config before get_model_config: {field_config}")
+                
+                # Get model configuration with fallback
+                model_config = get_model_config(field_config, template)
+                logger.info(f"Final model_config for {field_name}: {model_config}")
+                
+                # Debug: Print the raw field config and template
+                logger.debug(f"Raw field config: {field_config}")
+                logger.debug(f"Template config: {template}")
+                
+                # Print to console for immediate visibility
+                print(f"\n=== DEBUG: Field {field_name} ===")
+                print(f"Field config: {field_config}")
+                print(f"Template default model: {template.get('defaultModel')}")
+                print(f"Final model_config: {model_config}\n")
+                
                 # Map the template fields to the expected FieldConfig format
                 config = {
                     "field_name": field_name,
                     "prompt": field_config.get("prompt", ""),
-                    "model": field_config.get("model", template.get("defaultModel", "gpt-5")),
-                    "mode": field_config.get("mode", template.get("defaultMode", "low")),
-                    "type": field_config.get("typeOfPrompt", "verbatim")
+                    **model_config  # This includes model, mode, and type
                 }
                 fields.append(FieldConfig(**config))
                 
@@ -144,11 +380,12 @@ async def submit_project(
                 raise ValueError("No valid field names provided")
                 
         except Exception as e:
+            logger.error(f"Error processing field configurations: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Error processing field configurations: {str(e)}")
-        
+            
         if not files or len(files) == 0:
             raise HTTPException(status_code=400, detail="At least one document file is required")
-        
+    
         # Store uploaded files temporarily and create document metadata
         documents = []
         temp_dir = f"temp_files/{project_id}"

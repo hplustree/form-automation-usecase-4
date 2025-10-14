@@ -689,7 +689,6 @@ class EmbeddingService:
         current_page_num = page_data['page_number']
         page_chunks = []
         for chunk_idx, chunk_text in enumerate(text_chunks):
-            print(chunk_text)
             if len(chunk_text) < self.min_chunk_size:
                 logger.debug(f"Skipping chunk {chunk_idx} due to length {len(chunk_text)}")
                 continue
@@ -721,7 +720,6 @@ class EmbeddingService:
                 "content_type": content_type,
             }
             page_chunks.append(chunk_data)
-            print(page_chunks)
 
         return page_chunks
 
