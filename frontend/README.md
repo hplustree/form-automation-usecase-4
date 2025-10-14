@@ -143,29 +143,6 @@ The application is structured for easy API integration:
 2. Implement async/await patterns in components
 3. Add loading states and error handling
 
-### Example API Integration
-```javascript
-// In your component
-const [projects, setProjects] = useState([]);
-const [loading, setLoading] = useState(true);
-
-useEffect(() => {
-  const fetchProjects = async () => {
-    try {
-      const response = await fetch('/api/projects');
-      const data = await response.json();
-      setProjects(data);
-    } catch (error) {
-      console.error('Failed to fetch projects:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-  
-  fetchProjects();
-}, []);
-```
-
 ## 📱 Responsive Design Features
 
 ### Breakpoints
@@ -193,15 +170,3 @@ useEffect(() => {
 - Custom typography with Inter font family
 - Consistent spacing and border radius
 - Enhanced component styles (Cards, Buttons, Tables)
-
-## 🚧 Future API Endpoints
-
-```
-GET    /api/projects              # List all projects
-POST   /api/projects              # Create new project
-GET    /api/projects/:id/queue    # Get processing queue
-GET    /api/projects/:id/results  # Get extraction results
-POST   /api/projects/:id/upload   # Upload documents
-```
-
-**Built with ❤️ using React, Material-UI, and modern web technologies.**
