@@ -156,3 +156,79 @@ class ProcessingQueue(Base):
         Index('idx_queue_position', 'queue_position'),
         Index('idx_queue_priority', 'priority'),
     )
+
+
+class DocumentQueue(Base):
+    """Queue for document processing tasks."""
+    
+    __tablename__ = "document_queue"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    document_id = Column(String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    
+    # Queue metadata
+    priority = Column(Integer, default=0)  # Higher number = higher priority
+    worker_id = Column(String, nullable=True)  # ID of worker processing this
+    
+    # Status tracking
+    status = Column(String, default="waiting")  # waiting, processing, completed, failed
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    queued_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    document = relationship("Document", backref="queue_entry")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_doc_queue_status', 'status'),
+        Index('idx_doc_queue_priority', 'priority'),
+        Index('idx_doc_queue_document_id', 'document_id'),
+    )
+
+
+class FieldQueue(Base):
+    """Queue for field extraction tasks."""
+    
+    __tablename__ = "field_queue"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    document_id = Column(String, ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    field_name = Column(String, nullable=False)
+    
+    # Field configuration
+    field_config = Column(JSON, nullable=False)  # Contains prompt, model, mode, type
+    
+    # Queue metadata
+    priority = Column(Integer, default=0)  # Higher number = higher priority
+    worker_id = Column(String, nullable=True)  # ID of worker processing this
+    depends_on_doc = Column(Boolean, default=True)  # Whether this needs doc chunks to be ready
+    
+    # Status tracking
+    status = Column(String, default="waiting")  # waiting, processing, completed, failed
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    queued_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Relationships
+    document = relationship("Document", backref="field_queue_entries")
+    
+    # Indexes
+    __table_args__ = (
+        Index('idx_field_queue_status', 'status'),
+        Index('idx_field_queue_priority', 'priority'),
+        Index('idx_field_queue_document_id', 'document_id'),
+        Index('idx_field_queue_field_name', 'field_name'),
+    )

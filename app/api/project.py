@@ -18,7 +18,9 @@ from app.db.operations import (
     ProjectOperations,
     DocumentOperations,
     FieldResultOperations,
-    QueueOperations
+    QueueOperations,
+    DocumentQueueOperations,
+    FieldQueueOperations
 )
 from app.db.models import Project, Document
 
@@ -493,16 +495,16 @@ async def submit_project(
             ex=REDIS_TTL_SECONDS
         )
         
-        # Enqueue project for processing
+        # Enqueue project for parallel processing
         job = project_queue.enqueue(
-            'app.api.worker.process_project',
+            'app.api.worker_parallel.process_project_parallel',
             args=(project_id,),
             job_id=project_id,
             job_timeout=7200,  # 2 hours
             result_ttl=REDIS_TTL_SECONDS
         )
         
-        logger.info(f"Project {project_id} queued for processing with {len(documents)} documents")
+        logger.info(f"Project {project_id} queued for parallel processing with {len(documents)} documents")
         
         return ProjectSubmitResponse(
             project_id=project_id,

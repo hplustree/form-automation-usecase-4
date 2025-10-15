@@ -4,7 +4,7 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
-from app.db.models import Project, Document, FieldResult, ProcessingQueue
+from app.db.models import Project, Document, FieldResult, ProcessingQueue, DocumentQueue, FieldQueue
 from app.logging_config import logger
 import json
 
@@ -343,3 +343,236 @@ class QueueOperations:
         ).count()
         
         return ahead_count + 1
+
+
+class DocumentQueueOperations:
+    """Operations for document queue management."""
+    
+    @staticmethod
+    def enqueue_document(
+        db: Session,
+        document_id: str,
+        project_id: str,
+        priority: int = 0
+    ) -> DocumentQueue:
+        """Add a document to the processing queue."""
+        try:
+            queue_entry = DocumentQueue(
+                document_id=document_id,
+                project_id=project_id,
+                priority=priority,
+                status="waiting"
+            )
+            db.add(queue_entry)
+            db.commit()
+            db.refresh(queue_entry)
+            
+            logger.info(f"Enqueued document {document_id} for processing")
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to enqueue document: {str(e)}")
+            raise
+    
+    @staticmethod
+    def get_next_document(db: Session, worker_id: str) -> Optional[DocumentQueue]:
+        """Get the next document to process from the queue."""
+        try:
+            # Find the next waiting document with highest priority
+            queue_entry = db.query(DocumentQueue).filter(
+                DocumentQueue.status == "waiting"
+            ).order_by(
+                desc(DocumentQueue.priority),
+                DocumentQueue.queued_at
+            ).first()
+            
+            if queue_entry:
+                # Mark as processing
+                queue_entry.status = "processing"
+                queue_entry.worker_id = worker_id
+                queue_entry.started_at = datetime.utcnow()
+                db.commit()
+                db.refresh(queue_entry)
+            
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to get next document: {str(e)}")
+            raise
+    
+    @staticmethod
+    def complete_document(
+        db: Session,
+        document_id: str,
+        status: str = "completed",
+        error_message: Optional[str] = None
+    ) -> Optional[DocumentQueue]:
+        """Mark a document as completed in the queue."""
+        try:
+            queue_entry = db.query(DocumentQueue).filter(
+                DocumentQueue.document_id == document_id
+            ).first()
+            
+            if queue_entry:
+                queue_entry.status = status
+                queue_entry.completed_at = datetime.utcnow()
+                if error_message:
+                    queue_entry.error_message = error_message
+                db.commit()
+                db.refresh(queue_entry)
+            
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to complete document: {str(e)}")
+            raise
+    
+    @staticmethod
+    def get_pending_documents(db: Session, project_id: str) -> List[DocumentQueue]:
+        """Get all pending documents for a project."""
+        return db.query(DocumentQueue).filter(
+            and_(
+                DocumentQueue.project_id == project_id,
+                DocumentQueue.status.in_(["waiting", "processing"])
+            )
+        ).all()
+
+
+class FieldQueueOperations:
+    """Operations for field queue management."""
+    
+    @staticmethod
+    def enqueue_field(
+        db: Session,
+        document_id: str,
+        project_id: str,
+        field_name: str,
+        field_config: Dict[str, Any],
+        priority: int = 0,
+        depends_on_doc: bool = True
+    ) -> FieldQueue:
+        """Add a field extraction task to the queue."""
+        try:
+            queue_entry = FieldQueue(
+                document_id=document_id,
+                project_id=project_id,
+                field_name=field_name,
+                field_config=field_config,
+                priority=priority,
+                depends_on_doc=depends_on_doc,
+                status="waiting"
+            )
+            db.add(queue_entry)
+            db.commit()
+            db.refresh(queue_entry)
+            
+            logger.info(f"Enqueued field {field_name} for document {document_id}")
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to enqueue field: {str(e)}")
+            raise
+    
+    @staticmethod
+    def get_next_field(db: Session, worker_id: str) -> Optional[FieldQueue]:
+        """Get the next field to process from the queue."""
+        try:
+            # Find the next waiting field where document is ready
+            # Join with DocumentQueue to check if document processing is complete
+            queue_entry = db.query(FieldQueue).join(
+                DocumentQueue,
+                FieldQueue.document_id == DocumentQueue.document_id
+            ).filter(
+                and_(
+                    FieldQueue.status == "waiting",
+                    # Only process fields where document chunks are ready
+                    DocumentQueue.status == "completed"
+                )
+            ).order_by(
+                desc(FieldQueue.priority),
+                FieldQueue.queued_at
+            ).first()
+            
+            if queue_entry:
+                # Mark as processing
+                queue_entry.status = "processing"
+                queue_entry.worker_id = worker_id
+                queue_entry.started_at = datetime.utcnow()
+                db.commit()
+                db.refresh(queue_entry)
+            
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to get next field: {str(e)}")
+            raise
+    
+    @staticmethod
+    def complete_field(
+        db: Session,
+        field_queue_id: str,
+        status: str = "completed",
+        error_message: Optional[str] = None
+    ) -> Optional[FieldQueue]:
+        """Mark a field as completed in the queue."""
+        try:
+            queue_entry = db.query(FieldQueue).filter(
+                FieldQueue.id == field_queue_id
+            ).first()
+            
+            if queue_entry:
+                queue_entry.status = status
+                queue_entry.completed_at = datetime.utcnow()
+                if error_message:
+                    queue_entry.error_message = error_message
+                db.commit()
+                db.refresh(queue_entry)
+            
+            return queue_entry
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to complete field: {str(e)}")
+            raise
+    
+    @staticmethod
+    def get_pending_fields(db: Session, document_id: str) -> List[FieldQueue]:
+        """Get all pending fields for a document."""
+        return db.query(FieldQueue).filter(
+            and_(
+                FieldQueue.document_id == document_id,
+                FieldQueue.status.in_(["waiting", "processing"])
+            )
+        ).all()
+    
+    @staticmethod
+    def retry_field(
+        db: Session,
+        field_queue_id: str
+    ) -> Optional[FieldQueue]:
+        """Retry a failed field extraction."""
+        try:
+            queue_entry = db.query(FieldQueue).filter(
+                FieldQueue.id == field_queue_id
+            ).first()
+            
+            if queue_entry and queue_entry.retry_count < queue_entry.max_retries:
+                queue_entry.status = "waiting"
+                queue_entry.retry_count += 1
+                queue_entry.worker_id = None
+                queue_entry.error_message = None
+                db.commit()
+                db.refresh(queue_entry)
+                return queue_entry
+            
+            return None
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to retry field: {str(e)}")
+            raise

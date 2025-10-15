@@ -27,7 +27,7 @@ services:
     networks:
       - pipeline-network
 
-  # RQ Workers (configurable count via NUM_WORKERS)
+  # Parallel RQ Workers for documents, fields, and projects
   workers:
     build: .
     container_name: siso-pipeline-workers
@@ -35,8 +35,9 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - WEAVIATE_URL=http://weaviate:8080
       - DATABASE_URL=postgresql://postgres:1234@postgres:5432/siso_pipeline
-      - NUM_WORKERS=${NUM_WORKERS:-2}
-      - QUEUE_NAME=${QUEUE_NAME:-projects}
+      - NUM_DOC_WORKERS=${NUM_DOC_WORKERS:-3}
+      - NUM_FIELD_WORKERS=${NUM_FIELD_WORKERS:-5}
+      - NUM_PROJECT_WORKERS=${NUM_PROJECT_WORKERS:-1}
     env_file:
       - .env
     volumes:
@@ -49,8 +50,8 @@ services:
       - redis
       - weaviate
       - postgres
-    # Use Python launcher to spawn NUM_WORKERS RQ processes with logs
-    command: python -m app.utils.worker_launcher
+    # Use parallel launcher to spawn separate workers for docs, fields, and projects
+    command: python -m app.utils.worker_launcher_parallel
     networks:
       - pipeline-network
 
