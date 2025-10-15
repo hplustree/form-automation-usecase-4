@@ -14,6 +14,7 @@ from app.api.status import status_router
 from app.logging_config import logger
 import redis as rqredis
 import spacy
+from app.db.database import init_db
 
 load_dotenv()
 
@@ -25,6 +26,10 @@ sync_redis = rqredis.from_url(REDIS_URL)
 async def lifespan(app: FastAPI):
     try:
         logger.info("Initializing siso-pipeline application services")
+        
+        # Initialize database tables
+        logger.info("Initializing database...")
+        init_db()
         
         document_loader = DocumentLoader()
         weaviate_client = WeaviateClient(

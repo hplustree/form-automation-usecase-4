@@ -12,6 +12,8 @@ RUN apt-get update && apt-get install -y \
     libreoffice-impress \
     poppler-utils \
     libmagic1 \
+    netcat-openbsd \
+    postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
@@ -27,10 +29,16 @@ RUN python -m spacy download en_core_web_sm
 COPY . .
 
 # Create necessary directories
-RUN mkdir -p temp_files temp_image_summaries
+RUN mkdir -p temp_files temp_image_summaries logs
+
+# Make entrypoint script executable
+RUN chmod +x entrypoint.sh
 
 # Expose port
 EXPOSE 8001
+
+# Set entrypoint
+ENTRYPOINT ["./entrypoint.sh"]
 
 # Default command (can be overridden in docker-compose)
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8001"]

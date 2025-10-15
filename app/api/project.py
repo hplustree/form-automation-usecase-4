@@ -2,6 +2,7 @@ import os
 import uuid
 import json
 import hashlib
+import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Body
@@ -10,10 +11,16 @@ import redis as rqredis
 from rq import Queue
 from datetime import datetime
 import logging
-import json
-from pathlib import Path
-from typing import Dict, List, Optional
+from sqlalchemy.orm import Session
 from app.logging_config import logger
+from app.db.database import get_db
+from app.db.operations import (
+    ProjectOperations,
+    DocumentOperations,
+    FieldResultOperations,
+    QueueOperations
+)
+from app.db.models import Project, Document
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "projects")
@@ -295,26 +302,32 @@ class ProjectStatusResponse(BaseModel):
     updated_at: str
     documents: List[dict]
 
-
 class TemplateProcessResponse(BaseModel):
     success: bool
     message: str
-    labels: List[str]
+    fields: Dict[str, str]  # key = code, value = label
     total_fields: int
+
+
+
+class DocumentResult(BaseModel):
+    document_name: str
+    field_results: List[Dict[str, Any]]
 
 class ProjectResultsResponse(BaseModel):
     project_id: str
     project_name: str
     status: str
-    results: dict  # doc_id -> field results
+    documents: Dict[str, DocumentResult]  # doc_id -> document result
 
 
-@project_router.post("/project/submit", response_model=ProjectSubmitResponse)
+@project_router.post("/submit", response_model=ProjectSubmitResponse)
 async def submit_project(
     project_name: str = Form(...),
     field_names: str = Form(...),  # JSON array of field names
     template_name: str = Form("spa_fields"),
-    files: List[UploadFile] = File(...)
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
 ):
     """
     Submit a new project with documents and field extraction configuration.
@@ -424,7 +437,34 @@ async def submit_project(
             
             logger.info(f"Saved file {file.filename} for project {project_id}")
         
-        # Create project metadata
+        # Create project in PostgreSQL
+        fields_config = [field.model_dump() for field in fields]
+        
+        # Prepare documents for PostgreSQL (without doc_id as it will be generated)
+        pg_documents = [
+            {
+                "doc_name": doc["doc_name"],
+                "file_path": doc["file_path"]
+            }
+            for doc in documents
+        ]
+        
+        # Create project in database
+        db_project = ProjectOperations.create_project(
+            db,
+            project_name=project_name,
+            fields_config=fields_config,
+            documents=pg_documents
+        )
+        
+        # Update project_id to use the database-generated ID
+        project_id = db_project.id
+        
+        # Update document IDs from database
+        for idx, db_doc in enumerate(db_project.documents):
+            documents[idx]["doc_id"] = db_doc.id
+        
+        # Create project metadata for Redis (backward compatibility)
         project_data = {
             "project_id": project_id,
             "project_name": project_name,
@@ -432,14 +472,14 @@ async def submit_project(
             "total_documents": len(documents),
             "processed_documents": 0,
             "failed_documents": 0,
-            "created_at": datetime.now().isoformat(),
+            "created_at": db_project.created_at.isoformat(),
             "updated_at": datetime.now().isoformat(),
             "documents": documents,
-            "fields_config": [field.model_dump() for field in fields],
+            "fields_config": fields_config,
             "temp_dir": temp_dir
         }
         
-        # Store in Redis
+        # Store in Redis for backward compatibility
         sync_redis.set(
             f"project:{project_id}",
             json.dumps(project_data),
@@ -477,15 +517,50 @@ async def submit_project(
         raise HTTPException(status_code=500, detail=f"Failed to submit project: {str(e)}")
 
 
-@project_router.get("/project/{project_id}", response_model=ProjectStatusResponse)
-async def get_project_status(project_id: str):
+@project_router.get("/{project_id}", response_model=ProjectStatusResponse)
+async def get_project_status(project_id: str, db: Session = Depends(get_db)):
     """Get the status of a project"""
     try:
-        project_data_json = sync_redis.get(f"project:{project_id}")
-        if not project_data_json:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        logger.info(f"🔍 [Project {project_id}] Checking PostgreSQL for project data...")
+        db_project = ProjectOperations.get_project(db, project_id)
         
-        project_data = json.loads(project_data_json)
+        if db_project:
+            logger.info(f"✅ [Project {project_id}] Found in PostgreSQL")
+            # Get documents from database
+            db_documents = DocumentOperations.get_project_documents(db, project_id)
+            documents = [
+                {
+                    "doc_id": doc.id,
+                    "doc_name": doc.doc_name,
+                    "file_path": doc.file_path,
+                    "status": doc.status
+                }
+                for doc in db_documents
+            ]
+            
+            project_data = {
+                "project_id": db_project.id,
+                "project_name": db_project.project_name,
+                "status": db_project.status,
+                "total_documents": db_project.total_documents,
+                "processed_documents": db_project.processed_documents or 0,
+                "failed_documents": db_project.failed_documents or 0,
+                "created_at": db_project.created_at.isoformat(),
+                "updated_at": db_project.updated_at.isoformat() if db_project.updated_at else db_project.created_at.isoformat(),
+                "documents": documents
+            }
+            logger.debug(f"📊 [Project {project_id}] PostgreSQL data: {json.dumps(project_data, default=str, indent=2)}")
+        else:
+            logger.warning(f"⚠️  [Project {project_id}] Not found in PostgreSQL, checking Redis...")
+            # Fallback to Redis for backward compatibility
+            project_data_json = sync_redis.get(f"project:{project_id}")
+            if not project_data_json:
+                logger.error(f"❌ [Project {project_id}] Not found in PostgreSQL or Redis")
+                raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+            
+            logger.info(f"✅ [Project {project_id}] Found in Redis")
+            project_data = json.loads(project_data_json)
+            logger.debug(f"📊 [Project {project_id}] Redis data: {json.dumps(project_data, default=str, indent=2)}")
         
         return ProjectStatusResponse(
             project_id=project_data["project_id"],
@@ -506,27 +581,75 @@ async def get_project_status(project_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get project status: {str(e)}")
 
 
-@project_router.get("/project/{project_id}/results", response_model=ProjectResultsResponse)
-async def get_project_results(project_id: str):
+@project_router.get("/{project_id}/results", response_model=ProjectResultsResponse)
+async def get_project_results(project_id: str, db: Session = Depends(get_db)):
     """Get the extraction results for a project"""
     try:
-        # Get project metadata
-        project_data_json = sync_redis.get(f"project:{project_id}")
-        if not project_data_json:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        logger.info(f"🔍 [Results {project_id}] Checking PostgreSQL for project results...")
         
-        project_data = json.loads(project_data_json)
+        # Get project from PostgreSQL
+        db_project = ProjectOperations.get_project(db, project_id)
+        if db_project:
+            logger.info(f"✅ [Results {project_id}] Found project in PostgreSQL")
+            project_data = {
+                "project_id": db_project.id,
+                "project_name": db_project.project_name,
+                "status": db_project.status
+            }
+            
+            # Get all documents for the project
+            db_documents = DocumentOperations.get_project_documents(db, project_id)
+            document_map = {str(doc.id): doc.doc_name for doc in db_documents}
+            
+            # Get results from PostgreSQL
+            logger.info(f"📊 [Results {project_id}] Fetching field results from PostgreSQL...")
+            results = FieldResultOperations.get_project_results(db, project_id)
+            
+            # Format results with document names
+            documents = {}
+            for doc_id, field_results in results.items():
+                documents[doc_id] = {
+                    "document_name": document_map.get(doc_id, "Unknown Document"),
+                    "field_results": field_results
+                }
+                
+            logger.info(f"✅ [Results {project_id}] Retrieved {sum(len(doc['field_results']) for doc in documents.values())} field results from PostgreSQL")
+        else:
+            logger.warning(f"⚠️  [Results {project_id}] Project not found in PostgreSQL, checking Redis...")
+            
+            # Fallback to Redis
+            project_data_json = sync_redis.get(f"project:{project_id}")
+            if not project_data_json:
+                logger.error(f"❌ [Results {project_id}] Project not found in Redis")
+                raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+            
+            logger.info(f"✅ [Results {project_id}] Found project in Redis")
+            project_data = json.loads(project_data_json)
+            
+            # Get results from Redis
+            logger.info(f"📊 [Results {project_id}] Fetching results from Redis...")
+            results_json = sync_redis.get(f"project:{project_id}:results")
+            results = json.loads(results_json) if results_json else {}
+            
+            # For Redis, we don't have document names, so we'll use the document ID as the name
+            documents = {
+                doc_id: {
+                    "document_name": f"Document {i+1}",  # Fallback name
+                    "field_results": field_results
+                }
+                for i, (doc_id, field_results) in enumerate(results.items())
+            }
+            logger.info(f"✅ [Results {project_id}] Retrieved {sum(len(doc['field_results']) for doc in documents.values())} field results from Redis")
         
-        # Get results
-        results_json = sync_redis.get(f"project:{project_id}:results")
-        results = json.loads(results_json) if results_json else {}
-        
-        return ProjectResultsResponse(
+        response = ProjectResultsResponse(
             project_id=project_data["project_id"],
             project_name=project_data["project_name"],
             status=project_data["status"],
-            results=results
+            documents=documents
         )
+        
+        logger.info(f"✅ [Results {project_id}] Successfully returned {sum(len(doc_results) for doc_results in results.values())} field results")
+        return response
         
     except HTTPException:
         raise
@@ -535,20 +658,28 @@ async def get_project_results(project_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get project results: {str(e)}")
 
 
-@project_router.delete("/project/{project_id}")
-async def delete_project(project_id: str):
+@project_router.delete("/{project_id}")
+async def delete_project(project_id: str, db: Session = Depends(get_db)):
     """Delete a project and its data"""
     try:
-        # Get project data before deleting
-        project_data_json = sync_redis.get(f"project:{project_id}")
-        if not project_data_json:
-            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        # Try to get from PostgreSQL first
+        db_project = ProjectOperations.get_project(db, project_id)
         
-        project_data = json.loads(project_data_json)
+        if db_project:
+            temp_dir = db_project.temp_dir
+            # Delete from PostgreSQL (cascades to documents and field_results)
+            ProjectOperations.delete_project(db, project_id)
+        else:
+            # Fallback to Redis
+            project_data_json = sync_redis.get(f"project:{project_id}")
+            if not project_data_json:
+                raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+            project_data = json.loads(project_data_json)
+            temp_dir = project_data.get("temp_dir")
         
         # Delete temporary files
-        temp_dir = project_data.get("temp_dir")
         if temp_dir and os.path.exists(temp_dir):
+            import shutil
             shutil.rmtree(temp_dir)
             logger.info(f"Deleted temp directory: {temp_dir}")
         
@@ -567,6 +698,39 @@ async def delete_project(project_id: str):
     except Exception as e:
         logger.error(f"Error deleting project: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
+
+
+# Add this new endpoint after the delete_project endpoint
+@project_router.get("/list")
+async def list_projects(
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """List all projects with optional filtering"""
+    try:
+        projects = ProjectOperations.list_projects(db, skip, limit, status)
+        
+        return {
+            "projects": [
+                {
+                    "project_id": p.id,
+                    "project_name": p.project_name,
+                    "status": p.status,
+                    "total_documents": p.total_documents,
+                    "processed_documents": p.processed_documents or 0,
+                    "failed_documents": p.failed_documents or 0,
+                    "created_at": p.created_at.isoformat(),
+                    "updated_at": p.updated_at.isoformat() if p.updated_at else p.created_at.isoformat()
+                }
+                for p in projects
+            ],
+            "total": len(projects)
+        }
+    except Exception as e:
+        logger.error(f"Error listing projects: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
 
 
 @project_router.post("/process-template", response_model=TemplateProcessResponse)
@@ -618,28 +782,21 @@ async def process_template(template_name: str = Body(..., embed=True, descriptio
             logger.error(f"Error reading/parsing template file: {str(e)}", exc_info=True)
             raise
         
-        # Extract active fields
-        active_fields = []
+        # Extract active fields as code->label mapping
+        active_fields = {}
         if 'fields' in template_data:
             for field in template_data['fields']:
                 if field.get('isActive', True):  # Default to True if not specified
-                    active_fields.append({
-                        'code': field.get('code', ''),
-                        'label': field.get('label', ''),
-                        'prompt': field.get('prompt', ''),
-                        'model': field.get('model', template_data.get('defaultModel', 'gpt-5')),
-                        'mode': field.get('mode', template_data.get('defaultMode', 'low')),
-                        'type': field.get('typeOfPrompt', 'verbatim')
-                    })
-        
-        # Extract just the labels from active fields
-        labels = [field['label'] for field in active_fields if 'label' in field]
+                    code = field.get('code', '')
+                    label = field.get('label', '')
+                    if code:
+                        active_fields[code] = label
         
         response = {
             'success': True,
             'message': f"Successfully processed template: {template_data.get('name', 'Unnamed Template')}",
-            'labels': labels,
-            'total_fields': len(labels)
+            'fields': active_fields,  # key = code, value = label
+            'total_fields': len(active_fields)
         }
         
         logger.info(f"Successfully processed template. Found {len(active_fields)} active fields.")

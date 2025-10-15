@@ -10,12 +10,20 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 import redis as rqredis
+from sqlalchemy.orm import Session
 from app.core.weaviate_client import WeaviateClient
 from app.core.embedding import EmbeddingService
 from app.core.llm import LLMService
 from app.core.validate_agents import ValidationSystem
 from app.utils.file_handler import DocumentLoader
 from app.logging_config import logger
+from app.db.database import SessionLocal
+from app.db.operations import (
+    ProjectOperations,
+    DocumentOperations,
+    FieldResultOperations,
+    QueueOperations
+)
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 86400 * 7))
@@ -81,8 +89,18 @@ def init_services(model: str = None, reasoning_effort: str = None):
 
 
 def update_project_status(project_id: str, status: str, **kwargs):
-    """Update project status in Redis"""
+    """Update project status in both Redis and PostgreSQL"""
     try:
+        # Update in PostgreSQL
+        db = SessionLocal()
+        try:
+            ProjectOperations.update_project_status(
+                db, project_id, status, **kwargs
+            )
+        finally:
+            db.close()
+        
+        # Also update in Redis for backward compatibility
         project_data_json = sync_redis.get(f"project:{project_id}")
         if project_data_json:
             project_data = json.loads(project_data_json)
@@ -99,9 +117,19 @@ def update_project_status(project_id: str, status: str, **kwargs):
         logger.error(f"Failed to update project status: {str(e)}")
 
 
-def update_document_status(project_id: str, doc_id: str, status: str):
-    """Update document status in project metadata"""
+def update_document_status(project_id: str, doc_id: str, status: str, **kwargs):
+    """Update document status in both Redis and PostgreSQL"""
     try:
+        # Update in PostgreSQL
+        db = SessionLocal()
+        try:
+            DocumentOperations.update_document_status(
+                db, doc_id, status, **kwargs
+            )
+        finally:
+            db.close()
+        
+        # Also update in Redis for backward compatibility
         project_data_json = sync_redis.get(f"project:{project_id}")
         if project_data_json:
             project_data = json.loads(project_data_json)
@@ -120,7 +148,7 @@ def update_document_status(project_id: str, doc_id: str, status: str):
         logger.error(f"Failed to update document status: {str(e)}")
 
 
-def process_document_chunks(project_id: str, doc_id: str, doc_name: str, file_path: str, services: Dict):
+def process_document_chunks(project_id: str, doc_id: str, doc_name: str, file_path: str, services: Dict) -> int:
     """Process document and store chunks in Weaviate"""
     try:
         logger.info(f"Processing document {doc_name} for project {project_id}")
@@ -156,11 +184,19 @@ def process_document_chunks(project_id: str, doc_id: str, doc_name: str, file_pa
         )
         
         logger.info(f"Successfully processed {len(chunks)} chunks for {doc_name}")
-        return True
+        
+        # Update document with chunk count in PostgreSQL
+        update_document_status(
+            project_id, doc_id, "processing",
+            chunks_count=len(chunks),
+            page_count=max([c.get("page_number", 0) for c in chunks]) if chunks else 0
+        )
+        
+        return len(chunks)
         
     except Exception as e:
         logger.error(f"Error processing document {doc_name}: {str(e)}")
-        return False
+        return 0
 
 
 def process_single_field(
@@ -317,6 +353,29 @@ def process_single_field(
         }
         
         logger.info(f"Completed field '{field_name}' with confidence {result['confidence']:.2f}")
+        
+        # Store field result in PostgreSQL
+        db = SessionLocal()
+        try:
+            FieldResultOperations.create_field_result(
+                db,
+                document_id=doc_id,
+                field_name=field_name,
+                result_data={
+                    "value": result["value"],
+                    "answer_html": result.get("answer_html"),
+                    "explanation": result.get("explanation"),
+                    "confidence": result["confidence"],
+                    "source_pages": result["source_pages"],
+                    "chunks": result["chunks"],
+                    "status": result["status"],
+                    "model_used": model,
+                    "reasoning_mode": mode
+                }
+            )
+        finally:
+            db.close()
+        
         return result
         
     except Exception as e:
@@ -423,7 +482,8 @@ def process_project(project_id: str):
                 update_document_status(project_id, doc_id, "processing")
                 
                 # Step 1: Process and store document chunks
-                success = process_document_chunks(
+                start_time = time.time()
+                chunks_count = process_document_chunks(
                     project_id,
                     doc_id,
                     doc_name,
@@ -431,9 +491,12 @@ def process_project(project_id: str):
                     services
                 )
                 
-                if not success:
+                if chunks_count == 0:
                     logger.error(f"Failed to process chunks for {doc_name}")
-                    update_document_status(project_id, doc_id, "failed")
+                    update_document_status(
+                        project_id, doc_id, "failed",
+                        error_message="No chunks extracted from document"
+                    )
                     failed_count += 1
                     continue
                 
@@ -455,8 +518,12 @@ def process_project(project_id: str):
                     ex=REDIS_TTL_SECONDS
                 )
                 
-                # Update document status
-                update_document_status(project_id, doc_id, "completed")
+                # Update document status with processing time
+                processing_time = time.time() - start_time
+                update_document_status(
+                    project_id, doc_id, "completed",
+                    processing_time=processing_time
+                )
                 processed_count += 1
                 
                 # Update project progress
@@ -488,6 +555,13 @@ def process_project(project_id: str):
             processed_documents=processed_count,
             failed_documents=failed_count
         )
+        
+        # Mark queue entry as completed in PostgreSQL
+        db = SessionLocal()
+        try:
+            QueueOperations.complete_queue_entry(db, project_id, final_status)
+        finally:
+            db.close()
         
         # Cleanup temporary files
         temp_dir = project_data.get("temp_dir")
