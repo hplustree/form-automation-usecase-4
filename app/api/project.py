@@ -4,12 +4,15 @@ import json
 import hashlib
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Body
 from pydantic import BaseModel, Field, validator
 import redis as rqredis
 from rq import Queue
 from datetime import datetime
 import logging
+import json
+from pathlib import Path
+from typing import Dict, List, Optional
 from app.logging_config import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -293,6 +296,12 @@ class ProjectStatusResponse(BaseModel):
     documents: List[dict]
 
 
+class TemplateProcessResponse(BaseModel):
+    success: bool
+    message: str
+    labels: List[str]
+    total_fields: int
+
 class ProjectResultsResponse(BaseModel):
     project_id: str
     project_name: str
@@ -530,6 +539,7 @@ async def get_project_results(project_id: str):
 async def delete_project(project_id: str):
     """Delete a project and its data"""
     try:
+        # Get project data before deleting
         project_data_json = sync_redis.get(f"project:{project_id}")
         if not project_data_json:
             raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
@@ -537,7 +547,6 @@ async def delete_project(project_id: str):
         project_data = json.loads(project_data_json)
         
         # Delete temporary files
-        import shutil
         temp_dir = project_data.get("temp_dir")
         if temp_dir and os.path.exists(temp_dir):
             shutil.rmtree(temp_dir)
@@ -558,4 +567,91 @@ async def delete_project(project_id: str):
     except Exception as e:
         logger.error(f"Error deleting project: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
-         
+
+
+@project_router.post("/process-template", response_model=TemplateProcessResponse)
+async def process_template(template_name: str = Body(..., embed=True, description="Name of the template file (without .json extension)")):
+    """
+    Process a JSON template file from the templates directory and return all active fields with their configurations.
+    
+    Args:
+        template_name: Name of the template file (without .json extension)
+        
+    Returns:
+        TemplateProcessResponse with processing results
+    """
+    logger.info(f"Processing template: {template_name}")
+    logger.info(f"TEMPLATES_DIR: {TEMPLATES_DIR}")
+    logger.info(f"Current working directory: {os.getcwd()}")
+    
+    try:
+        # Construct the template path
+        template_path = TEMPLATES_DIR / f"{template_name}"
+        logger.info(f"Initial template path: {template_path}")
+        
+        # Check if file exists
+        if not template_path.exists():
+            # Try with .json extension if not already present
+            if not template_path.suffix:
+                template_path = template_path.with_suffix('.json')
+                logger.info(f"Trying with .json extension: {template_path}")
+            
+            if not template_path.exists():
+                available_templates = [f.stem for f in TEMPLATES_DIR.glob('*.json')]
+                logger.error(f"Template not found. Available templates: {available_templates}")
+                raise HTTPException(
+                    status_code=404,
+                    detail={
+                        "error": f"Template '{template_name}' not found in {TEMPLATES_DIR}",
+                        "available_templates": available_templates
+                    }
+                )
+        
+        logger.info(f"Found template at: {template_path}")
+        
+        # Read and parse the JSON file
+        try:
+            with open(template_path, 'r', encoding='utf-8') as f:
+                template_data = json.load(f)
+            logger.info(f"Successfully loaded template data. Fields found: {len(template_data.get('fields', []))}")
+        except Exception as e:
+            logger.error(f"Error reading/parsing template file: {str(e)}", exc_info=True)
+            raise
+        
+        # Extract active fields
+        active_fields = []
+        if 'fields' in template_data:
+            for field in template_data['fields']:
+                if field.get('isActive', True):  # Default to True if not specified
+                    active_fields.append({
+                        'code': field.get('code', ''),
+                        'label': field.get('label', ''),
+                        'prompt': field.get('prompt', ''),
+                        'model': field.get('model', template_data.get('defaultModel', 'gpt-5')),
+                        'mode': field.get('mode', template_data.get('defaultMode', 'low')),
+                        'type': field.get('typeOfPrompt', 'verbatim')
+                    })
+        
+        # Extract just the labels from active fields
+        labels = [field['label'] for field in active_fields if 'label' in field]
+        
+        response = {
+            'success': True,
+            'message': f"Successfully processed template: {template_data.get('name', 'Unnamed Template')}",
+            'labels': labels,
+            'total_fields': len(labels)
+        }
+        
+        logger.info(f"Successfully processed template. Found {len(active_fields)} active fields.")
+        return response
+        
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON in template {template_path}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error processing template {template_path}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)

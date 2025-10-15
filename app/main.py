@@ -87,8 +87,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(project_router, prefix="/api", tags=["projects"])
-app.include_router(status_router, prefix="/api", tags=["status"])
+# Include routers with prefixes
+app.include_router(project_router, prefix="/project", tags=["projects"])
+app.include_router(status_router, tags=["status"])
 
 
 @app.get("/health")
