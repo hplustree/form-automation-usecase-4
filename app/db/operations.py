@@ -283,7 +283,7 @@ class FieldResultOperations:
             db.rollback()
             logger.error(f"Failed to update field result: {str(e)}")
             raise
-    
+            
     @staticmethod
     def get_project_results(db: Session, project_id: str) -> Dict[str, List[Dict]]:
         """Get all field results for a project grouped by document."""
