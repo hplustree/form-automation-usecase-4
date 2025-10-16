@@ -32,6 +32,17 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const allChecked = fields.length > 0 && fields.every((i) => i.checked);
+  const someChecked = fields.some((i) => i.checked) && !allChecked;
+
+  const mergeFiles = (prevFiles, newFiles) => {
+    const map = new Map();
+    [...prevFiles, ...newFiles].forEach((f) => {
+      const key = `${f.name}_${f.size}_${f.lastModified}`;
+      if (!map.has(key)) map.set(key, f);
+    });
+    return Array.from(map.values());
+  };
 
   const handleFieldToggle = (itemId) => {
     setFields((prev) =>
@@ -39,6 +50,10 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
         item.id === itemId ? { ...item, checked: !item.checked } : item
       )
     );
+  };
+
+  const handleToggleAll = (checked) => {
+    setFields((prev) => prev.map((item) => ({ ...item, checked })));
   };
 
   const handleDragOver = (e) => {
@@ -54,26 +69,18 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
     e.preventDefault();
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files);
-    setUploadedFiles(files);
+    setUploadedFiles((prev) => mergeFiles(prev, files));
     console.log("Files dropped:", files);
   };
 
-  // const FileUpload = ({ files, onFilesSelected }) => {
-  //   const handleFileChange = (event) => {
-  //     const selectedFiles = Array.from(event.target.files);
-  //     onFilesSelected([...files, ...selectedFiles]);
-  //   };
-
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
-    setUploadedFiles(files);
+    setUploadedFiles((prev) => mergeFiles(prev, files));
+    // allow selecting the same file again by resetting the input value
+    e.target.value = null;
     console.log("Files selected:", files);
   };
 
-  // const handleCreate = () => {
-  //   if (projectName.trim()) {
-  //     const newProject = {
-  //       id: Date.now(),
   //       name: projectName,
   //       documentCount: 0,
   //       isActive: false,
@@ -95,11 +102,6 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
     localStorage.setItem("projects_map", JSON.stringify(projectsMap));
   };
 
-  const storeProjectFieldsById = (projectId, fieldNames) => {
-    const fieldsMap = JSON.parse(localStorage.getItem("project_fields_map")) || {};
-    fieldsMap[projectId] = Array.isArray(fieldNames) ? fieldNames : [];
-    localStorage.setItem("project_fields_map", JSON.stringify(fieldsMap));
-  };
 
   const handleCreate = async () => {
     if (!projectName.trim()) {
@@ -123,12 +125,11 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
       if (uploadedFiles.length > 0) {
         const response = await upload_file(projectData, uploadedFiles);
         storeProjectIdByName(projectName, response.project_id);
-        storeProjectFieldsById(response.project_id, selectedFieldNames);
 
         console.log("Upload response:", response);
         // alert("Project created and files uploaded successfully!");
       } else {
-        // No upload response with id; still persist fields under a temp key mapped after ID becomes available later if needed.
+        // alert("Project created! No files were uploaded.");
       }
   
       const newProject = {
@@ -154,7 +155,15 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
   const handleCancel = () => {
     setProjectName("");
     setFields((prev) => prev.map((i) => ({ ...i, checked: false })));
+    setUploadedFiles([]);
     onClose();
+  };
+
+  const handleDialogClose = (...args) => {
+    setProjectName("");
+    setFields((prev) => prev.map((i) => ({ ...i, checked: false })));
+    setUploadedFiles([]);
+    onClose && onClose(...args);
   };
 
   // useEffect
@@ -179,7 +188,7 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={handleDialogClose}
       maxWidth="md"
       fullWidth
       fullScreen={isMobile}
@@ -201,7 +210,7 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
             to extract
           </Typography>
         </Box>
-        <IconButton onClick={onClose}>
+        <IconButton onClick={handleDialogClose}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -362,6 +371,18 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
             >
               {fields.length > 0 ? (
                 <FormGroup>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={allChecked}
+                        indeterminate={someChecked}
+                        onChange={(e) => handleToggleAll(e.target.checked)}
+                        size="small"
+                      />
+                    }
+                    label="Select All"
+                    sx={{ ml: 1 }}
+                  />
                   {fields.map((item) => (
                     <FormControlLabel
                       key={item.id}
