@@ -107,10 +107,6 @@ export const getProjectIdByName = (projectName) => {
     return projectsMap[projectName] || null;
   };
   
-
-  // Add this function to handle Excel export
-
-// New API for updating a single field result on a document
 export const updateFieldResult = async (documentId, fieldName, updates) => {
   try {
     const url = `${API_URL}/project/field-result/${encodeURIComponent(documentId)}/${encodeURIComponent(fieldName)}`;

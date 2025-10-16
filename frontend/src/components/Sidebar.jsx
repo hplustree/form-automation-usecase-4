@@ -85,52 +85,6 @@ const Sidebar = ({
       sx={{margin:0 , padding:0}}
       >
         {projects.map((project) => (
-          // <ListItem
-          //   key={project.id}
-          //   button
-          //   onClick={() => onProjectSelect(project)}
-          //   sx={{
-          //     borderRadius: 1,
-          //     // mb: 0.5,
-          //     backgroundColor:
-          //       selectedProject?.id === project.id ? "action.selected" : "transparent",
-          //     "&:hover": {
-          //       backgroundColor:
-          //         selectedProject?.id === project.id ? "action.selected" : "action.hover",
-          //     },
-          //   }}
-          // >
-          //   <ListItemIcon sx={{ minWidth: 32, color: "text.primary" }}>
-          //     <FolderOutlinedIcon />
-          //   </ListItemIcon>
-          //   <Box 
-          //   // sx={{ flex: 1 }}
-          //   >
-          //     <ListItemText
-          //       primary={
-          //         <Typography
-          //           variant="body2"
-          //           sx={{ fontWeight: 500, color: "text.primary" }}
-          //         >
-          //           {project.name}
-          //         </Typography>
-          //       }
-          //       secondary={
-          //         <Typography variant="caption" color="text.secondary">
-          //           {project.documentCount} documents
-          //         </Typography>
-          //       }
-          //     />
-          //   </Box>
-          //   <ListItemIcon sx={{ minWidth: 32 }}>
-          //     {selectedProject?.id === project.id ? (
-          //       <ExpandMoreIcon fontSize="small" />
-          //     ) : (
-          //       <ChevronRightIcon fontSize="small" />
-          //     )}
-          //   </ListItemIcon>
-          // </ListItem>
-
         <ListItem
           key={project.id}
           button
