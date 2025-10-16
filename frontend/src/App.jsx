@@ -5,14 +5,14 @@ import Header from "./components/Header";
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./components/Dashboard";
 import CreateProjectModal from "./components/CreateProjectModal";
-import { projects as initialProjects } from "./data/mockData";
+// import { projects as initialProjects } from "./data/mockData";
 import {getProjectIdByName} from "./api/api";
 
 const DRAWER_WIDTH = 319;
 
 function App() {
-  const [projects, setProjects] = useState(initialProjects);
-  const [selectedProject, setSelectedProject] = useState(initialProjects[0]); 
+  const [projects, setProjects] = useState();
+  const [selectedProject, setSelectedProject] = useState(); 
   const [selectedProjectId , setSelectedProjectId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true); 
   const [createProjectOpen, setCreateProjectOpen] = useState(false);

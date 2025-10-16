@@ -374,9 +374,9 @@ const handleExport = () => {
           flexDirection: "column",
         }}
       >
-        <Typography variant="h6" color="text.secondary" gutterBottom>
+        {/* <Typography variant="h6" color="text.secondary" gutterBottom>
           Current Project
-        </Typography>
+        </Typography> */}
         <Typography variant="body1" color="text.secondary">
           Select a project from the sidebar to view details
         </Typography>
@@ -453,167 +453,79 @@ const handleExport = () => {
         </Typography>
       </Box>
 
-      {/* Tabs */}
-      {/* <Box
-        sx={{
-          borderBottom: 1,
-          borderColor: "divider",
-          position: "sticky",
-          top: 0,
-          zIndex: 1,
-          bgcolor: "background.paper",
-        }}
-      >
-        <Tabs
-          value={tabValue}
-          onChange={handleTabChange}
+        <Box
           sx={{
-            "& .MuiTabs-indicator": {
-              display: "none",
-            },
-            "& .MuiTab-root": {
-              minHeight: 48,
-              textTransform: "none",
-              fontWeight: 600,
-              px: 3,
-              borderRadius: 1,
-              marginRight: 1,
-              color: "text.secondary",
-            },
-            "& .Mui-selected": {
-              color: "text.primary",
-              backgroundColor: (t) => alpha(t.palette.primary.main, t.palette.mode === "dark" ? 0.24 : 0.12),
-              border: "1px solid",
-              borderColor: (t) => alpha(t.palette.primary.main, 0.3),
-            },
+            backgroundColor: (t) =>
+              t.palette.mode === "dark"
+                ? t.palette.action.hover
+                : "#e5e7eb",
+            display: "inline-flex",
+            borderRadius: "8px",
+            p: "3px",
+            mb: 3,
+            width: "27.99375rem"
           }}
         >
-          <Tab label="Results" />
-          <Tab label="Processing" />
-        </Tabs>
-      </Box> */}
-      {/* Tabs */}
-
-
-{/* <Box
-  sx={{
-    backgroundColor: "#e5e7eb", // gray background like in image
-    display: "inline-flex",
-    borderRadius: "8px",
-    p: "3px",
-    mb: 3,
-    width:"27.99375rem"
-  }}
->
-  <Tabs
-    value={tabValue}
-    onChange={handleTabChange}
-    TabIndicatorProps={{ style: { display: "none" } }} // remove underline
-    sx={{
-      minHeight: "unset",
-      "& .MuiTabs-flexContainer": {
-        display: "flex",
-        gap: "4px",
-      },
-      "& .MuiTab-root": {
-        textTransform: "none",
-        fontWeight: 600,
-        fontSize: "0.95rem",
-        color: "#5f6368",
-        borderRadius: "6px",
-        minHeight: "34px",
-        minWidth: "120px",
-        backgroundColor: "transparent",
-        transition: "all 0.2s ease",
-      },
-      "& .Mui-selected": {
-        backgroundColor: "#fff",
-        color: "#202124",
-        boxShadow: "0 0 0 1px rgba(0,0,0,0.1)",
-      },
-      "& .MuiTab-root:hover": {
-        backgroundColor: "#f1f3f4",
-      },
-    }}
-  >
-    <Tab label="Results" />
-    <Tab label="Processing" />
-  </Tabs>
-</Box> */}
-
-<Box
-  sx={{
-    backgroundColor: (t) =>
-      t.palette.mode === "dark"
-        ? t.palette.action.hover
-        : "#e5e7eb",
-    display: "inline-flex",
-    borderRadius: "8px",
-    p: "3px",
-    mb: 3,
-    width: "27.99375rem"
-  }}
->
-  <Tabs
-    value={tabValue}
-    onChange={handleTabChange}
-    TabIndicatorProps={{ style: { display: "none" } }}
-    
-    sx={{
-      minHeight: "unset",
-      width: "100%",
-      "& .MuiTabs-flexContainer": {
-        display: "flex",
-        gap: "4px",
-        width: "100%",
-        color: (t) =>
-          t.palette.mode === "dark"
-            ? t.palette.text.secondary
-            : "#111827",
-      },
-      "& .MuiTab-root": {
-        textTransform: "none",
-        fontWeight: 600,
-        fontSize: "0.85rem", // Slightly smaller font
-        // color: (t) => (t.palette.mode === "dark" ? t.palette.text.secondary : "#5f6368"),
-        color: (t) => 
-          t.palette.mode === "dark" 
-            ? t.palette.text.secondary  
-            // : "#111827",
-            : "#4b5563",
-        borderRadius: "4px",
-        minHeight: "35px", // Reduced height
-        padding: "5px 9px", // Reduced padding
-        flex: 1,
-        minWidth: "unset",
-        // backgroundColor: "transparent",
-        // transition: "all 0.2s ease",
-      },
-      "& .Mui-selected": {
-        backgroundColor: (t) =>
-          t.palette.mode === "dark" ? t.palette.background.paper : "#fff",
-        // color: (t) => (t.palette.mode === "dark" ? t.palette.text.primary : "#202124"),
-        color: (t) => 
-          t.palette.mode === "dark" 
-            ? t.palette.text.primary // white for dark mode
-            : "#111827",
-        boxShadow: (t) =>
-          t.palette.mode === "dark" ? "inset 0 0 0 1px rgba(255,255,255,0.08)" : "0 0 0 1px rgba(0,0,0,0.1)",
-      },
-      "& .MuiTab-root:hover": {
-        backgroundColor: (t) =>
-          t.palette.mode === "dark" ? t.palette.action.selected : "#f1f3f4",
-        color: (t) => 
-          t.palette.mode === "dark" 
-            ? t.palette.text.primary 
-            : "#111827",
-      },
-    }}
-  >
-    <Tab label="Results"  />
-    <Tab label="Processing"   />
-  </Tabs>
-</Box>
+          <Tabs
+            value={tabValue}
+            onChange={handleTabChange}
+            TabIndicatorProps={{ style: { display: "none" } }}
+            
+            sx={{
+              minHeight: "unset",
+              width: "100%",
+              "& .MuiTabs-flexContainer": {
+                display: "flex",
+                gap: "4px",
+                width: "100%",
+                color: (t) =>
+                  t.palette.mode === "dark"
+                    ? t.palette.text.secondary
+                    : "#111827",
+              },
+              "& .MuiTab-root": {
+                textTransform: "none",
+                fontWeight: 600,
+                fontSize: "0.85rem", // Slightly smaller font
+                // color: (t) => (t.palette.mode === "dark" ? t.palette.text.secondary : "#5f6368"),
+                color: (t) => 
+                  t.palette.mode === "dark" 
+                    ? t.palette.text.secondary  
+                    // : "#111827",
+                    : "#4b5563",
+                borderRadius: "4px",
+                minHeight: "35px", // Reduced height
+                padding: "5px 9px", // Reduced padding
+                flex: 1,
+                minWidth: "unset",
+                // backgroundColor: "transparent",
+                // transition: "all 0.2s ease",
+              },
+              "& .Mui-selected": {
+                backgroundColor: (t) =>
+                  t.palette.mode === "dark" ? t.palette.background.paper : "#fff",
+                // color: (t) => (t.palette.mode === "dark" ? t.palette.text.primary : "#202124"),
+                color: (t) => 
+                  t.palette.mode === "dark" 
+                    ? t.palette.text.primary 
+                    : "#111827",
+                boxShadow: (t) =>
+                  t.palette.mode === "dark" ? "inset 0 0 0 1px rgba(255,255,255,0.08)" : "0 0 0 1px rgba(0,0,0,0.1)",
+              },
+              "& .MuiTab-root:hover": {
+                backgroundColor: (t) =>
+                  t.palette.mode === "dark" ? t.palette.action.selected : "#f1f3f4",
+                color: (t) => 
+                  t.palette.mode === "dark" 
+                    ? t.palette.text.primary 
+                    : "#111827",
+              },
+            }}
+          >
+            <Tab label="Results"  />
+            <Tab label="Processing"   />
+          </Tabs>
+        </Box>
 
 
 
@@ -730,28 +642,7 @@ const handleExport = () => {
                     },
                   }}
                 >
-                  <TableRow
-                    //  key={doc.id}
-                    //  hover
-                    //  sx={{
-                    //    borderBottom: "1px solid #f3f4f6", // Very light gray border
-                    //    "&:hover": {
-                    //      backgroundColor: "#f9fafb", // Light gray hover
-                    //    },
-                    //    "& .MuiTableCell-root": {
-                    //      borderBottom: "none", // Remove cell bottom border
-                    //      py: 1.5, // Vertical padding
-                    //    },
-                    //  }}
-                  //    "&:hover": {
-                  //      backgroundColor: "#f9fafb", // Light gray hover
-                  //    },
-                  //    "& .MuiTableCell-root": {
-                  //      borderBottom: "none", // Remove cell bottom border
-                  //      py: 1.5, // Vertical padding
-                  //    },
-                  //  }}
-                  >
+                  <TableRow>
                     <TableCell
                       sx={{ minWidth: 200 }}
                     >
@@ -796,7 +687,7 @@ const handleExport = () => {
                             t.palette.mode === "dark" ? t.palette.background.paper : "#f9fafb",
                         }}
                       >
-                        {editingCell && editingCell.rowKey === getRowKey(doc) && editingCell.fieldName === 'doc_name' ? (
+                        {editingCell && editingCell.rowKey === getRowKey(doc)  ? (
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <TextField
                               size="small"
@@ -833,7 +724,7 @@ const handleExport = () => {
                                 </Typography>
                               </Tooltip>
                             </Box>
-                            <IconButton size="small" onClick={() => startEdit(getRowKey(doc), 'doc_name', doc.fileName)}>
+                            <IconButton size="small" onClick={() => startEdit(getRowKey(doc), '', doc.fileName)}>
                               <EditOutlinedIcon fontSize="small" />
                             </IconButton>
                           </Box>
@@ -894,7 +785,7 @@ const handleExport = () => {
           )}
         </Box>
       </TabPanel>
-      <Snackbar
+      {/* <Snackbar
         open={toast.open}
         autoHideDuration={2500}
         onClose={() => setToast({ ...toast, open: false })}
@@ -903,7 +794,7 @@ const handleExport = () => {
         <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} sx={{ width: '100%' }}>
           {toast.message}
         </Alert>
-      </Snackbar>
+      </Snackbar> */}
 
       {/* Processing Tab */}
       <TabPanel value={tabValue} index={1}>

@@ -98,14 +98,14 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
 
   const handleCreate = async () => {
     if (!projectName.trim()) {
-      alert("Please enter a project name.");
+      // alert("Please enter a project name.");
       return;
     }
     try {
       const selectedFieldNames = fields.filter(item => item.checked).map(item => item.id);
   
       if (selectedFieldNames.length === 0) {
-        alert("Please select at least one field.");
+        // alert("Please select at least one field.");
         return;
       }
   
@@ -120,9 +120,9 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
         storeProjectIdByName(projectName, response.project_id);
 
         console.log("Upload response:", response);
-        alert("Project created and files uploaded successfully!");
+        // alert("Project created and files uploaded successfully!");
       } else {
-        alert("Project created! No files were uploaded.");
+        // alert("Project created! No files were uploaded.");
       }
   
       const newProject = {
@@ -141,7 +141,7 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
       onClose();
     } catch (error) {
       console.error("Error creating project:", error);
-      alert("Failed to create project. Check console for details.");
+      // alert("Failed to create project. Check console for details.");
     }
   };
 

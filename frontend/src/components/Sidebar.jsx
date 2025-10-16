@@ -84,7 +84,9 @@ const Sidebar = ({
       // sx={{ px: 1 }}
       sx={{margin:0 , padding:0}}
       >
-        {projects.map((project) => (
+        {projects && projects.length > 0  ? ( 
+          
+        projects.map((project) => (
         <ListItem
           key={project.id}
           button
@@ -154,7 +156,20 @@ const Sidebar = ({
         </ListItem>
 
 
-        ))}
+        ))) :
+         (
+          <Typography
+      variant="body2"
+      color="text.secondary"
+      sx={{
+        textAlign: "center",
+        mt: 2,
+        fontStyle: "italic",
+      }}
+    >
+      No projects available
+        </Typography>
+        )}
       </List>
     </Box>
   );
