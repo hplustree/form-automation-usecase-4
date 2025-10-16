@@ -168,16 +168,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
       const docsMap = apiResponse?.documents || {};
 
-      // Consider only completed documents based on current docStatus
-      const completedIds = new Set(
-        (docStatus || [])
-          .filter((d) => d.status === "completed")
-          .map((d) => d.doc_id)
-      );
-
-      // Transform backend shape to table-friendly shape
+      // Transform backend shape to table-friendly shape (no filtering, include all available results)
       const resultsArray = Object.entries(docsMap)
-        .filter(([docId]) => (completedIds.size ? completedIds.has(docId) : true))
         .map(([docId, docData]) => {
           const resultObj = {};
           (docData?.field_results || []).forEach((fr) => {
@@ -216,6 +208,20 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       setLoadingResults(false);
     }
   };
+
+  // Load expected headers from localStorage by projectId, if available
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    try {
+      const fieldsMap = JSON.parse(localStorage.getItem('project_fields_map')) || {};
+      const headers = Array.isArray(fieldsMap[selectedProjectId]) ? fieldsMap[selectedProjectId] : [];
+      if (headers.length) {
+        setTableHeaders(headers);
+      }
+    } catch (e) {
+      console.warn('Failed to load project fields from localStorage', e);
+    }
+  }, [selectedProjectId]);
 
   const getStatusChip = (status) => {
     const statusConfig = {
@@ -308,12 +314,19 @@ const handleExport = () => {
     return () => clearInterval(interval);
   }, [selectedProjectId]);
 
-  // Fetch results when switching to results tab or when docStatus changes
+  // Fetch results when switching to results tab
   useEffect(() => {
     if (tabValue === 0 && selectedProjectId) {
       fetchExtractionResults();
     }
   }, [tabValue, selectedProjectId]);
+
+  // Also fetch results when docStatus updates (polling) so cell values fill in
+  useEffect(() => {
+    if (tabValue === 0 && selectedProjectId) {
+      fetchExtractionResults();
+    }
+  }, [docStatus, tabValue, selectedProjectId]);
 
   // Truncate long text for display
   const truncateText = (text, maxLength = 100) => {
@@ -336,6 +349,13 @@ const handleExport = () => {
   };
 
   const getRowKey = (doc) => doc.doc_id || doc.results?.doc_id || doc.fileName || doc.id;
+
+  // Helper to read a field value from extractionResults for a given docId
+  const getFieldValueByDocId = (docId, fieldName) => {
+    const row = extractionResults.find(d => (d.doc_id || d.id) === docId);
+    if (!row) return null;
+    return getFieldValue(row, fieldName);
+  };
 
   const startEdit = (rowKey, fieldName, currentValue) => {
     setEditingCell({ rowKey, fieldName });

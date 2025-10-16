@@ -95,6 +95,11 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
     localStorage.setItem("projects_map", JSON.stringify(projectsMap));
   };
 
+  const storeProjectFieldsById = (projectId, fieldNames) => {
+    const fieldsMap = JSON.parse(localStorage.getItem("project_fields_map")) || {};
+    fieldsMap[projectId] = Array.isArray(fieldNames) ? fieldNames : [];
+    localStorage.setItem("project_fields_map", JSON.stringify(fieldsMap));
+  };
 
   const handleCreate = async () => {
     if (!projectName.trim()) {
@@ -118,11 +123,12 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
       if (uploadedFiles.length > 0) {
         const response = await upload_file(projectData, uploadedFiles);
         storeProjectIdByName(projectName, response.project_id);
+        storeProjectFieldsById(response.project_id, selectedFieldNames);
 
         console.log("Upload response:", response);
         // alert("Project created and files uploaded successfully!");
       } else {
-        // alert("Project created! No files were uploaded.");
+        // No upload response with id; still persist fields under a temp key mapped after ID becomes available later if needed.
       }
   
       const newProject = {
