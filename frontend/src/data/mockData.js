@@ -65,11 +65,16 @@ export const extractionResults = [
 export const keyPointOptions = {
   entityInformation: [
     { id: 'company_name', label: 'Company Name', checked: true },
-    { id: 'document_date', label: 'Document Date', checked: true }
+    { id: 'document_date', label: 'Document Date', checked: true },
+    { id: 'business_model', label: 'business_model', checked: true },
+    { id: "escrow_account_details", label: 'escrow_account_details', checked: true }
+
   ],
   financialData: [
     { id: 'total_amount', label: 'Total Amount', checked: true },
-    { id: 'invoice_number', label: 'Invoice Number', checked: true }
+    { id: 'invoice_number', label: 'Invoice Number', checked: true },
+    { id: "escrow_account_details", label: 'escrow_account_details', checked: true }
+
   ],
   contactInformation: [
     { id: 'address', label: 'Address', checked: false },

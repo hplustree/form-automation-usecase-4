@@ -18,10 +18,10 @@ import {
   ExpandMore as ExpandMoreIcon,
   ChevronRight as ChevronRightIcon,
 } from "@mui/icons-material";
-import { projects } from "../data/mockData";
+// import { projects } from "../data/mockData";
 import FolderIcon from "@mui/icons-material/Folder";
 import FolderOutlinedIcon from '@mui/icons-material/FolderOutlined';
-const DRAWER_WIDTH = 280;
+const DRAWER_WIDTH = 319;
 
 const Sidebar = ({
   open,
@@ -30,14 +30,17 @@ const Sidebar = ({
   onProjectSelect,
   onCreateProject,
   isMobile,
+  projects
 }) => {
   const theme = useTheme();
 
   const drawerContent = (
     <Box
       sx={{
-        width: DRAWER_WIDTH,
+        // width: DRAWER_WIDTH,
         height: "100%",
+        // backgroundColor:"#E3E5E880",
+        backgroundColor: theme.palette.mode === 'light' ? "#F5F6F7" : "#202124",
         // marginTop: 0,
       }}
     >
@@ -77,51 +80,126 @@ const Sidebar = ({
         </Typography>
       </Box>
 
-      <List sx={{ px: 1 }}>
+      <List 
+      // sx={{ px: 1 }}
+      sx={{margin:0 , padding:0}}
+      >
         {projects.map((project) => (
-          <ListItem
-            key={project.id}
-            button
-            onClick={() => onProjectSelect(project)}
+          // <ListItem
+          //   key={project.id}
+          //   button
+          //   onClick={() => onProjectSelect(project)}
+          //   sx={{
+          //     borderRadius: 1,
+          //     // mb: 0.5,
+          //     backgroundColor:
+          //       selectedProject?.id === project.id ? "action.selected" : "transparent",
+          //     "&:hover": {
+          //       backgroundColor:
+          //         selectedProject?.id === project.id ? "action.selected" : "action.hover",
+          //     },
+          //   }}
+          // >
+          //   <ListItemIcon sx={{ minWidth: 32, color: "text.primary" }}>
+          //     <FolderOutlinedIcon />
+          //   </ListItemIcon>
+          //   <Box 
+          //   // sx={{ flex: 1 }}
+          //   >
+          //     <ListItemText
+          //       primary={
+          //         <Typography
+          //           variant="body2"
+          //           sx={{ fontWeight: 500, color: "text.primary" }}
+          //         >
+          //           {project.name}
+          //         </Typography>
+          //       }
+          //       secondary={
+          //         <Typography variant="caption" color="text.secondary">
+          //           {project.documentCount} documents
+          //         </Typography>
+          //       }
+          //     />
+          //   </Box>
+          //   <ListItemIcon sx={{ minWidth: 32 }}>
+          //     {selectedProject?.id === project.id ? (
+          //       <ExpandMoreIcon fontSize="small" />
+          //     ) : (
+          //       <ChevronRightIcon fontSize="small" />
+          //     )}
+          //   </ListItemIcon>
+          // </ListItem>
+
+        <ListItem
+          key={project.id}
+          button
+          onClick={() => onProjectSelect(project)}
+          sx={{
+            borderRadius: "6px",
+            py: 0.4,
+            px: 0.5,
+            mb: 0.2,
+            display: "flex",
+            alignItems: "center",
+            backgroundColor:
+              selectedProject?.id === project.id
+                ? (theme.palette.mode === "dark" ? "#1b1c1f" : "#E3E5E8")
+                : "transparent",
+            "&:hover": {
+              backgroundColor: selectedProject?.id === project.id
+                ? (theme.palette.mode === "dark" ? "#17181b" : "#DADDE1")
+                : (theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "#E3E5E8"),
+            },
+            transition: "all 0.2s ease",
+            cursor: "pointer",
+          }}
+        >
+          <ListItemIcon
             sx={{
-              borderRadius: 1,
-              mb: 0.5,
-              backgroundColor:
-                selectedProject?.id === project.id ? "action.selected" : "transparent",
-              "&:hover": {
-                backgroundColor:
-                  selectedProject?.id === project.id ? "action.selected" : "action.hover",
-              },
+              minWidth: 28,
+              color: theme.palette.mode === "dark" ? "white" : "#5f6368",
+              mt: "1px",
             }}
           >
-            <ListItemIcon sx={{ minWidth: 32, color: "text.primary" }}>
-              <FolderOutlinedIcon />
-            </ListItemIcon>
-            <Box sx={{ flex: 1 }}>
-              <ListItemText
-                primary={
-                  <Typography
-                    variant="body2"
-                    sx={{ fontWeight: 500, color: "text.primary" }}
-                  >
-                    {project.name}
-                  </Typography>
-                }
-                secondary={
-                  <Typography variant="caption" color="text.secondary">
-                    {project.documentCount} documents
-                  </Typography>
-                }
-              />
-            </Box>
-            <ListItemIcon sx={{ minWidth: 32 }}>
-              {selectedProject?.id === project.id ? (
-                <ExpandMoreIcon fontSize="small" />
-              ) : (
-                <ChevronRightIcon fontSize="small" />
-              )}
-            </ListItemIcon>
-          </ListItem>
+            <FolderOutlinedIcon fontSize="small" />
+          </ListItemIcon>
+
+          <Box sx={{ flex: 1 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 500,
+                // color: "#202124",
+                color:theme.palette.mode === "dark" ? "white" : "#202124",
+                fontSize: "0.88rem",
+                lineHeight: 1.2,
+              }}
+            >
+              {project.name}
+            </Typography>
+            <Typography
+              variant="caption"
+              sx={{
+                color: "#5f6368",
+                // color:theme.palette.mode === "dark" ? "white" : "#5f6368",
+                fontSize: "0.73rem",
+              }}
+            >
+              {project.documentCount} documents
+            </Typography>
+          </Box>
+
+          <ListItemIcon sx={{ minWidth: 22 }}>
+            {/* {selectedProject?.id === project.id ? ( */}
+              {/* <ExpandMoreIcon fontSize="small" sx={{ color: "#5f6368" }} /> */}
+            {/* ) : ( */}
+              <ChevronRightIcon fontSize="small" sx={{ color: "#5f6368" }} />
+            {/* )} */}
+          </ListItemIcon>
+        </ListItem>
+
+
         ))}
       </List>
     </Box>

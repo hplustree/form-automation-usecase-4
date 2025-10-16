@@ -156,7 +156,6 @@ const getTheme = (mode) => createTheme({
 
 export const CustomThemeProvider = ({ children }) => {
   const [mode, setMode] = useState(() => {
-    // Get saved theme from localStorage or default to light
     const savedMode = localStorage.getItem('themeMode');
     return savedMode || 'light';
   });

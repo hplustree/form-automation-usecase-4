@@ -46,7 +46,7 @@ function Header({ onMenuClick, sidebarOpen, isMobile, drawerWidth = 282 }) {
               color: "primary.contrastText",
               px: 1,
               py: 1,
-              borderRadius: 1,
+              borderRadius: 0.8,
               mr: 2,
             }}
           >
@@ -73,12 +73,12 @@ function Header({ onMenuClick, sidebarOpen, isMobile, drawerWidth = 282 }) {
             <Typography
               variant="body1"
               color="text.primary"
-              sx={{ fontWeight: 600, fontSize: "1rem" }}
+              sx={{ fontWeight: 600, fontSize: "1.2rem" }}
             >
               SiSo
             </Typography>
-            <Typography variant="body1" color="text.secondary">
-              Document Processing
+            <Typography variant="body1" color="text.secondary" sx={{ fontWeight: 400, fontSize: "0.8rem" }}>
+              Document Processing 
             </Typography>
           </Box>
         </Box>
