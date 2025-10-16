@@ -735,6 +735,76 @@ async def list_projects(
         raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
 
 
+
+@project_router.put("/field-result/{document_id}/{field_name}")
+async def update_field_result(
+    document_id: str,
+    field_name: str,
+    updates: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Update field result value and source pages in the database.
+    
+    Args:
+        document_id: ID of the document
+        field_name: Name of the field to update
+        updates: Dictionary with fields to update (e.g., {"value": "new value", "source_pages": [1, 2, 3]})
+    
+    Returns:
+        Updated field result information
+    """
+    try:
+        # Get the field result
+        field_result = FieldResultOperations.get_field_result(db, document_id, field_name)
+        if not field_result:
+            raise HTTPException(status_code=404, detail=f"Field result not found for document {document_id}, field {field_name}")
+        
+        # List of allowed fields to update
+        allowed_fields = [
+            "value", "answer_html", "explanation", "confidence",
+            "source_pages", "chunks", "status", "error_message"
+        ]
+        
+        # Filter and validate updates
+        valid_updates = {}
+        for field, value in updates.items():
+            if field in allowed_fields:
+                valid_updates[field] = value
+            else:
+                logger.warning(f"Attempted to update non-allowed field: {field}")
+        
+        if not valid_updates:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+        
+        # Update the field result
+        updated_field = FieldResultOperations.update_field_result(
+            db, document_id, field_name, valid_updates
+        )
+        
+        if not updated_field:
+            raise HTTPException(status_code=500, detail="Failed to update field result")
+        
+        logger.info(f"Updated field '{field_name}' for document {document_id} with fields: {list(valid_updates.keys())}")
+        
+        return {
+            "document_id": document_id,
+            "field_name": field_name,
+            "value": updated_field.value,
+            "source_pages": updated_field.source_pages,
+            "confidence": updated_field.confidence,
+            "status": updated_field.status,
+            "updated_fields": list(valid_updates.keys()),
+            "updated_at": updated_field.updated_at.isoformat() if updated_field.updated_at else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating field result for document {document_id}, field {field_name}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to update field result: {str(e)}")
+
+
 @project_router.post("/process-template", response_model=TemplateProcessResponse)
 async def process_template(template_name: str = Body(..., embed=True, description="Name of the template file (without .json extension)")):
     """

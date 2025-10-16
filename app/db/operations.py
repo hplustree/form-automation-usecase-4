@@ -240,6 +240,51 @@ class FieldResultOperations:
         ).all()
     
     @staticmethod
+    def get_field_result(db: Session, document_id: str, field_name: str) -> Optional[FieldResult]:
+        """Get a specific field result for a document."""
+        return db.query(FieldResult).filter(
+            and_(
+                FieldResult.document_id == document_id,
+                FieldResult.field_name == field_name
+            )
+        ).first()
+    
+    @staticmethod
+    def update_field_result(
+        db: Session,
+        document_id: str,
+        field_name: str,
+        updates: Dict[str, Any]
+    ) -> Optional[FieldResult]:
+        """Update a specific field result."""
+        try:
+            field_result = db.query(FieldResult).filter(
+                and_(
+                    FieldResult.document_id == document_id,
+                    FieldResult.field_name == field_name
+                )
+            ).first()
+            
+            if not field_result:
+                return None
+            
+            # Update fields
+            for key, value in updates.items():
+                if hasattr(field_result, key):
+                    setattr(field_result, key, value)
+            
+            field_result.updated_at = datetime.utcnow()
+            
+            db.commit()
+            db.refresh(field_result)
+            return field_result
+            
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Failed to update field result: {str(e)}")
+            raise
+    
+    @staticmethod
     def get_project_results(db: Session, project_id: str) -> Dict[str, List[Dict]]:
         """Get all field results for a project grouped by document."""
         documents = db.query(Document).filter(
