@@ -28,6 +28,7 @@ import {
 } from "@mui/material";
 import {
   Description as DescriptionIcon,
+  UploadOutlined,
 } from "@mui/icons-material";
 import EditOutlinedIcon from "@mui/icons-material/EditOutlined";
 import CheckIcon from "@mui/icons-material/Check";
@@ -291,6 +292,29 @@ const handleExport = () => {
     fetchExtractionResults();
   };
 
+  // Ensure hooks are always called in the same order (move above any early returns)
+  useEffect(() => {
+    if (!selectedProjectId) return;
+    // Clear previous project's data immediately to avoid stale display
+    setDocStatus([]);
+    setExtractionResults([]);
+    setTableHeaders([]);
+
+    getProjectStatus();
+    const interval = setInterval(() => {
+      getProjectStatus();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, [selectedProjectId]);
+
+  // Fetch results when switching to results tab or when docStatus changes
+  useEffect(() => {
+    if (tabValue === 0 && selectedProjectId) {
+      fetchExtractionResults();
+    }
+  }, [tabValue, selectedProjectId]);
+
   // Truncate long text for display
   const truncateText = (text, maxLength = 100) => {
     if (!text || text === "-") return "-";
@@ -384,27 +408,7 @@ const handleExport = () => {
     );
   }
 
-  useEffect(() => {
-    if (!selectedProjectId) return;
-    // Clear previous project's data immediately to avoid stale display
-    setDocStatus([]);
-    setExtractionResults([]);
-    setTableHeaders([]);
-
-    getProjectStatus();
-    const interval = setInterval(() => {
-      getProjectStatus();
-    }, 10000);
-
-    return () => clearInterval(interval);
-  }, [selectedProjectId]);
-
-  // Fetch results when switching to results tab or when docStatus changes
-  useEffect(() => {
-    if (tabValue === 0 && selectedProjectId) {
-      fetchExtractionResults();
-    }
-  }, [tabValue, selectedProjectId]);
+  
 
   return (
     <Box sx={{ width: "100%" }}>
@@ -554,7 +558,7 @@ const handleExport = () => {
             </Typography>
             <Button
             variant="outlined"
-            startIcon={<DownloadIcon />}
+            startIcon={<UploadOutlined />}
             onClick={handleExport}
             disabled={extractionResults.length === 0 || tableHeaders.length === 0}
             sx={{
@@ -704,7 +708,7 @@ const handleExport = () => {
                             </IconButton>
                           </Box>
                         ) : (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'space-between' }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-start' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <DescriptionIcon fontSize="small" color="action" />
                               <Tooltip title={doc.fileName} arrow>
@@ -724,9 +728,6 @@ const handleExport = () => {
                                 </Typography>
                               </Tooltip>
                             </Box>
-                            <IconButton size="small" onClick={() => startEdit(getRowKey(doc), '', doc.fileName)}>
-                              <EditOutlinedIcon fontSize="small" />
-                            </IconButton>
                           </Box>
                         )}
                       </TableCell>
@@ -887,7 +888,7 @@ const handleExport = () => {
                             },
                           }}
                         />
-                        <Typography
+                        {/* <Typography
                           variant="body2"
                           sx={{
                             color: theme.palette.text.secondary,
@@ -896,7 +897,7 @@ const handleExport = () => {
                           }}
                         >
                           {item.progress || 0}%
-                        </Typography>
+                        </Typography> */}
                       </Box>
                     )}
                   </CardContent>

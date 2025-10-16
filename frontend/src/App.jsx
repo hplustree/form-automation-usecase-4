@@ -11,7 +11,7 @@ import {getProjectIdByName} from "./api/api";
 const DRAWER_WIDTH = 319;
 
 function App() {
-  const [projects, setProjects] = useState();
+  const [projects, setProjects] = useState([]);
   const [selectedProject, setSelectedProject] = useState(); 
   const [selectedProjectId , setSelectedProjectId] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(true); 
