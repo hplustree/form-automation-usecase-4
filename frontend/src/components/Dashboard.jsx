@@ -121,6 +121,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [editValue, setEditValue] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
   const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedValues, setEditedValues] = useState({}); // { rowKey: { fieldName: value } }
 
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
@@ -290,12 +292,96 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       />
     );
   };
-const handleExport = () => {
-  exportToExcel(extractionResults, tableHeaders, selectedProject.name);
-};
+
+  const handleExport = () => {
+    exportToExcel(extractionResults, tableHeaders, selectedProject.name);
+  };
+
   const handleViewResults = () => {
     setTabValue(0);
     fetchExtractionResults();
+  };
+
+  const startGlobalEdit = () => {
+    setIsEditing(true);
+    setEditedValues({});
+  };
+
+  const cancelGlobalEdit = () => {
+    setIsEditing(false);
+    setEditedValues({});
+  };
+
+  const handleFieldChange = (rowKey, fieldName, value) => {
+    setEditedValues((prev) => ({
+      ...prev,
+      [rowKey]: { ...(prev[rowKey] || {}), [fieldName]: value },
+    }));
+  };
+
+  const saveAllEdits = async () => {
+    if (!isEditing) return;
+    try {
+      setSavingEdit(true);
+      const updates = [];
+      // Build updates only for changed values
+      Object.entries(editedValues).forEach(([rowKey, fieldsMap]) => {
+        const row = extractionResults.find((d) => getRowKey(d) === rowKey);
+        if (!row) return;
+        const backendDocId = row.doc_id || row.results?.doc_id || rowKey;
+        Object.entries(fieldsMap).forEach(([fieldName, newVal]) => {
+          if (fieldName === 'doc_name') return; // never update document name
+          const original = getFieldValue(row, fieldName);
+          if (String(original) !== String(newVal)) {
+            const existing = row.results?.[fieldName];
+            updates.push({
+              backendDocId,
+              fieldName,
+              newVal,
+              source_pages: Array.isArray(existing?.source_pages) ? existing.source_pages : [],
+            });
+          }
+        });
+      });
+
+      if (updates.length === 0) {
+        setToast({ open: true, message: 'No changes to save', severity: 'info' });
+        setIsEditing(false);
+        setEditedValues({});
+        return;
+      }
+
+      await Promise.all(
+        updates.map((u) =>
+          updateFieldResult(u.backendDocId, u.fieldName, { value: u.newVal, source_pages: u.source_pages })
+        )
+      );
+
+      // Optimistically update local state
+      setExtractionResults((prev) =>
+        prev.map((d) => {
+          const rowKey = getRowKey(d);
+          const fieldsMap = editedValues[rowKey];
+          if (!fieldsMap) return d;
+          const nextResults = { ...(d.results || {}) };
+          Object.entries(fieldsMap).forEach(([fieldName, val]) => {
+            if (fieldName === 'doc_name') return;
+            const existing = nextResults[fieldName];
+            nextResults[fieldName] = existing && typeof existing === 'object' ? { ...existing, value: val } : { value: val };
+          });
+          return { ...d, results: nextResults };
+        })
+      );
+
+      setToast({ open: true, message: 'All changes saved', severity: 'success' });
+      setIsEditing(false);
+      setEditedValues({});
+    } catch (e) {
+      console.error('Failed to save edits', e);
+      setToast({ open: true, message: 'Failed to save changes', severity: 'error' });
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   // Ensure hooks are always called in the same order (move above any early returns)
@@ -314,19 +400,19 @@ const handleExport = () => {
     return () => clearInterval(interval);
   }, [selectedProjectId]);
 
-  // Fetch results when switching to results tab
+  // Fetch results when switching to results tab (skip while editing)
   useEffect(() => {
-    if (tabValue === 0 && selectedProjectId) {
+    if (tabValue === 0 && selectedProjectId && !isEditing) {
       fetchExtractionResults();
     }
-  }, [tabValue, selectedProjectId]);
+  }, [tabValue, selectedProjectId, isEditing]);
 
-  // Also fetch results when docStatus updates (polling) so cell values fill in
+  // Also fetch results when docStatus updates (polling) so cell values fill in, but skip while editing
   useEffect(() => {
-    if (tabValue === 0 && selectedProjectId) {
+    if (tabValue === 0 && selectedProjectId && !isEditing) {
       fetchExtractionResults();
     }
-  }, [docStatus, tabValue, selectedProjectId]);
+  }, [docStatus, tabValue, selectedProjectId, isEditing]);
 
   // Truncate long text for display
   const truncateText = (text, maxLength = 100) => {
@@ -355,6 +441,17 @@ const handleExport = () => {
     const row = extractionResults.find(d => (d.doc_id || d.id) === docId);
     if (!row) return null;
     return getFieldValue(row, fieldName);
+  };
+
+  const getSourcePages = (doc, fieldName) => {
+    const field = doc?.results?.[fieldName];
+    if (!field) return [];
+    if (Array.isArray(field.source_pages) && field.source_pages.length) return field.source_pages;
+    if (Array.isArray(field.chunks)) {
+      const pages = [...new Set(field.chunks.map((c) => c?.page).filter((p) => p !== undefined && p !== null))];
+      return pages;
+    }
+    return [];
   };
 
   const startEdit = (rowKey, fieldName, currentValue) => {
@@ -405,8 +502,6 @@ const handleExport = () => {
     }
   };
 
-  // No counting of meaningful fields anymore; we display all fields returned by API
-
   if (!selectedProject) {
     return (
       <Box
@@ -427,8 +522,6 @@ const handleExport = () => {
       </Box>
     );
   }
-
-  
 
   return (
     <Box sx={{ width: "100%" }}>
@@ -477,124 +570,202 @@ const handleExport = () => {
         </Typography>
       </Box>
 
-        <Box
+      <Box
+        sx={{
+          backgroundColor: (t) =>
+            t.palette.mode === "dark"
+              ? t.palette.action.hover
+              : "#e5e7eb",
+          display: "inline-flex",
+          borderRadius: "8px",
+          p: "3px",
+          mb: 3,
+          width: "27.99375rem"
+        }}
+      >
+        <Tabs
+          value={tabValue}
+          onChange={handleTabChange}
+          TabIndicatorProps={{ style: { display: "none" } }}
           sx={{
-            backgroundColor: (t) =>
-              t.palette.mode === "dark"
-                ? t.palette.action.hover
-                : "#e5e7eb",
-            display: "inline-flex",
-            borderRadius: "8px",
-            p: "3px",
-            mb: 3,
-            width: "27.99375rem"
+            minHeight: "unset",
+            width: "100%",
+            "& .MuiTabs-flexContainer": {
+              display: "flex",
+              gap: "4px",
+              width: "100%",
+              color: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.text.secondary
+                  : "#111827",
+            },
+            "& .MuiTab-root": {
+              textTransform: "none",
+              fontWeight: 600,
+              fontSize: "0.85rem", // Slightly smaller font
+              // color: (t) => (t.palette.mode === "dark" ? t.palette.text.secondary : "#5f6368"),
+              color: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.text.secondary
+                  : "#4b5563",
+              borderRadius: "4px",
+              minHeight: "35px", // Reduced height
+              padding: "5px 9px", // Reduced padding
+              flex: 1,
+              minWidth: "unset",
+              // backgroundColor: "transparent",
+              // transition: "all 0.2s ease",
+            },
+            "& .Mui-selected": {
+              backgroundColor: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.background.paper
+                  : "#fff",
+              // color: (t) => (t.palette.mode === "dark" ? t.palette.text.primary : "#202124"),
+              color: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.text.primary
+                  : "#111827",
+              boxShadow: (t) =>
+                t.palette.mode === "dark"
+                  ? "inset 0 0 0 1px rgba(255,255,255,0.08)"
+                  : "0 0 0 1px rgba(0,0,0,0.1)",
+            },
+            "& .MuiTab-root:hover": {
+              backgroundColor: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.action.selected
+                  : "#f1f3f4",
+              color: (t) =>
+                t.palette.mode === "dark"
+                  ? t.palette.text.primary
+                  : "#111827",
+            },
           }}
         >
-          <Tabs
-            value={tabValue}
-            onChange={handleTabChange}
-            TabIndicatorProps={{ style: { display: "none" } }}
-            
-            sx={{
-              minHeight: "unset",
-              width: "100%",
-              "& .MuiTabs-flexContainer": {
-                display: "flex",
-                gap: "4px",
-                width: "100%",
-                color: (t) =>
-                  t.palette.mode === "dark"
-                    ? t.palette.text.secondary
-                    : "#111827",
-              },
-              "& .MuiTab-root": {
-                textTransform: "none",
-                fontWeight: 600,
-                fontSize: "0.85rem", // Slightly smaller font
-                // color: (t) => (t.palette.mode === "dark" ? t.palette.text.secondary : "#5f6368"),
-                color: (t) => 
-                  t.palette.mode === "dark" 
-                    ? t.palette.text.secondary  
-                    // : "#111827",
-                    : "#4b5563",
-                borderRadius: "4px",
-                minHeight: "35px", // Reduced height
-                padding: "5px 9px", // Reduced padding
-                flex: 1,
-                minWidth: "unset",
-                // backgroundColor: "transparent",
-                // transition: "all 0.2s ease",
-              },
-              "& .Mui-selected": {
-                backgroundColor: (t) =>
-                  t.palette.mode === "dark" ? t.palette.background.paper : "#fff",
-                // color: (t) => (t.palette.mode === "dark" ? t.palette.text.primary : "#202124"),
-                color: (t) => 
-                  t.palette.mode === "dark" 
-                    ? t.palette.text.primary 
-                    : "#111827",
-                boxShadow: (t) =>
-                  t.palette.mode === "dark" ? "inset 0 0 0 1px rgba(255,255,255,0.08)" : "0 0 0 1px rgba(0,0,0,0.1)",
-              },
-              "& .MuiTab-root:hover": {
-                backgroundColor: (t) =>
-                  t.palette.mode === "dark" ? t.palette.action.selected : "#f1f3f4",
-                color: (t) => 
-                  t.palette.mode === "dark" 
-                    ? t.palette.text.primary 
-                    : "#111827",
-              },
-            }}
-          >
-            <Tab label="Results"  />
-            <Tab label="Processing"   />
-          </Tabs>
-        </Box>
-
-
+          <Tab label="Results" />
+          <Tab label="Processing" />
+        </Tabs>
+      </Box>
 
       {/* Results Tab */}
-      <TabPanel value={tabValue} index={0} >
+      <TabPanel value={tabValue} index={0}>
         <Box
-        sx={{ p:3 ,height: '45vh', width: '100%',
-          backgroundColor: (t) =>
-            t.palette.mode === 'dark' ? t.palette.background.default : "#f5f6f7",
-          borderRadius:2}}
-
-         >
-          <Typography variant="h6" gutterBottom sx={{ fontWeight: 550 , fontSize:24,
-             color: (theme) =>
-              theme.palette.mode === "dark" ? "white" : "#282C34",
-            "&.Mui-selected": {
+          sx={{
+            p: 3,
+            width: "100%",
+            backgroundColor: (t) =>
+              t.palette.mode === "dark" ? t.palette.background.default : "#f5f6f7",
+            borderRadius: 2,
+          }}
+        >
+          <Typography
+            variant="h6"
+            gutterBottom
+            sx={{
+              fontWeight: 550,
+              fontSize: 24,
               color: (theme) =>
                 theme.palette.mode === "dark" ? "white" : "#282C34",
-            },
-          }}>
-            Extraction Results
-          </Typography>
-          <Box sx={{ mb: 3 , display: 'flex', justifyContent: 'space-between', alignItems: 'center', }}>
-            <Typography variant="body2" color="text.secondary">
-              {loadingResults ? "Loading results..." : "Click any cell to edit extracted data"}
-            </Typography>
-            <Button
-            variant="outlined"
-            startIcon={<UploadOutlined />}
-            onClick={handleExport}
-            disabled={extractionResults.length === 0 || tableHeaders.length === 0}
-            sx={{
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '6px',
-              px: 2,
-              py: 1
+              "&.Mui-selected": {
+                color: (theme) =>
+                  theme.palette.mode === "dark" ? "white" : "#282C34",
+              },
             }}
           >
-            Export Results
-          </Button>
+            Extraction Results
+          </Typography>
+          <Box
+            sx={{
+              mb: 3,
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <Typography variant="body2" color="text.secondary">
+              {loadingResults
+                ? "Loading results..."
+                : isEditing
+                  ? "Edit mode: modify fields and click Save All"
+                  : "Click Edit to modify results"}
+            </Typography>
+            <Box sx={{ display: "flex", gap: 1 }}>
+              {!isEditing ? (
+                <>
+                  <Button
+                    variant="contained"
+                    onClick={startGlobalEdit}
+                    disabled={
+                      extractionResults.length === 0 || tableHeaders.length === 0
+                    }
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<UploadOutlined />}
+                    onClick={handleExport}
+                    disabled={
+                      extractionResults.length === 0 || tableHeaders.length === 0
+                    }
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Export Results
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    onClick={saveAllEdits}
+                    disabled={savingEdit}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Save All
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="inherit"
+                    onClick={cancelGlobalEdit}
+                    disabled={savingEdit}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </>
+              )}
+            </Box>
           </Box>
 
           {tableHeaders.length === 0 ? (
-            <Box sx={{ textAlign: 'center', p: 3 }}>
+            <Box sx={{ textAlign: "center", p: 3 }}>
               <Typography color="text.secondary" gutterBottom>
                 No fields configured yet for this project.
               </Typography>
@@ -604,17 +775,6 @@ const handleExport = () => {
             </Box>
           ) : (
             <TableContainer
-              // component={Paper}
-              // sx={{
-              //   boxShadow: 1,
-              //   overflowX: "auto",
-              //   bgcolor: "background.paper",
-              //   border: "1px solid",
-              //   borderColor: "divider",
-              //   borderRadius: 1,
-              //   maxHeight: '60vh'
-              // }}
-
               component={Paper}
               sx={{
                 boxShadow: 1,
@@ -622,18 +782,19 @@ const handleExport = () => {
                 bgcolor: (t) => t.palette.background.paper,
                 border: (t) => `1px solid ${t.palette.divider}`,
                 borderRadius: 1,
-                maxHeight: '60vh',
-                // Slim horizontal scrollbar
-                scrollbarWidth: 'thin',
-                '&::-webkit-scrollbar': {
+                scrollbarWidth: "thin",
+                "&::-webkit-scrollbar": {
                   height: 6,
                 },
-                '&::-webkit-scrollbar-thumb': {
-                  backgroundColor: (t) => t.palette.mode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
+                "&::-webkit-scrollbar-thumb": {
+                  backgroundColor: (t) =>
+                    t.palette.mode === "dark"
+                      ? "rgba(255,255,255,0.25)"
+                      : "rgba(0,0,0,0.25)",
                   borderRadius: 8,
                 },
-                '&::-webkit-scrollbar-track': {
-                  backgroundColor: 'transparent',
+                "&::-webkit-scrollbar-track": {
+                  backgroundColor: "transparent",
                 },
               }}
             >
@@ -641,9 +802,14 @@ const handleExport = () => {
                 <TableHead
                   sx={{
                     backgroundColor: (t) =>
-                      t.palette.mode === "dark" ? t.palette.background.default : "#eef2f7",
+                      t.palette.mode === "dark"
+                        ? t.palette.background.default
+                        : "#eef2f7",
                     "& .MuiTableCell-root": {
-                      color: (t) => (t.palette.mode === "dark" ? t.palette.text.primary : "#111827"),
+                      color: (t) =>
+                        t.palette.mode === "dark"
+                          ? t.palette.text.primary
+                          : "#111827",
                       borderBottom: (t) => `1px solid ${t.palette.divider}`,
                       fontWeight: 700,
                       fontSize: "0.9rem",
@@ -652,21 +818,18 @@ const handleExport = () => {
                     // Ensure consistent header cell background
                     "& .MuiTableCell-head": {
                       backgroundColor: (t) =>
-                        t.palette.mode === "dark" ? t.palette.background.default : "#eef2f7",
+                        t.palette.mode === "dark"
+                          ? t.palette.background.default
+                          : "#eef2f7",
                     },
                   }}
                 >
                   <TableRow>
-                    <TableCell
-                      sx={{ minWidth: 200 }}
-                    >
+                    <TableCell sx={{ minWidth: 200 }}>
                       File Name
                     </TableCell>
                     {tableHeaders.map((header) => (
-                      <TableCell 
-                        key={header} 
-                        sx={{ minWidth: 180 }}
-                      >
+                      <TableCell key={header} sx={{ minWidth: 180 }}>
                         <Tooltip title={header} arrow>
                           <span>{formatFieldName(header)}</span>
                         </Tooltip>
@@ -675,17 +838,16 @@ const handleExport = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {docStatus.length === 0 ? (
+                  {extractionResults.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={1 + tableHeaders.length} align="center">
-                        <Typography color="text.secondary">No documents yet.</Typography>
+                        <Typography color="text.secondary">No results available.</Typography>
                       </TableCell>
                     </TableRow>
                   ) : null}
-                  {docStatus.map((doc) => (
+                  {extractionResults.map((doc) => (
                     <TableRow
                       key={doc.doc_id || doc.id}
-                      
                       hover
                       sx={{
                         borderBottom: "1px solid",
@@ -698,106 +860,96 @@ const handleExport = () => {
                         },
                       }}
                     >
-                      <TableCell 
-                        sx={{ 
+                      <TableCell
+                        sx={{
                           minWidth: 200,
                           backgroundColor: (t) =>
-                            t.palette.mode === "dark" ? t.palette.background.paper : "#f9fafb",
+                            t.palette.mode === "dark"
+                              ? t.palette.background.paper
+                              : "#f9fafb",
                         }}
                       >
-                        {editingCell && editingCell.rowKey === getRowKey(doc)  ? (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 1,
+                            justifyContent: "flex-start",
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 1,
+                            }}
+                          >
+                            <DescriptionIcon fontSize="small" color="action" />
+                            <Tooltip title={doc.fileName} arrow>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontFamily: "monospace",
+                                  fontWeight: 500,
+                                  display: "block",
+                                  maxWidth: "40ch",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {doc.fileName}
+                              </Typography>
+                            </Tooltip>
+                          </Box>
+                        </Box>
+                      </TableCell>
+                      {tableHeaders.map((header) => (
+                        <TableCell
+                          key={`${doc.doc_id || doc.id}-${header}`}
+                          sx={{
+                            backgroundColor: (t) =>
+                              t.palette.mode === "dark"
+                                ? t.palette.background.paper
+                                : "#f9fafb",
+                          }}
+                        >
+                          {isEditing && header !== "doc_name" ? (
                             <TextField
                               size="small"
                               fullWidth
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
+                              value={
+                                (editedValues[getRowKey(doc)] && editedValues[getRowKey(doc)][header]) ?? String(getFieldValue(doc, header))
+                              }
+                              onChange={(e) =>
+                                handleFieldChange(getRowKey(doc), header, e.target.value)
+                              }
                               disabled={savingEdit}
                             />
-                            <IconButton color="primary" onClick={applyEdit} disabled={savingEdit}>
-                              <CheckIcon fontSize="small" />
-                            </IconButton>
-                            <IconButton onClick={cancelEdit} disabled={savingEdit}>
-                              <CloseIcon fontSize="small" />
-                            </IconButton>
-                          </Box>
-                        ) : (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-start' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <DescriptionIcon fontSize="small" color="action" />
-                              <Tooltip title={doc.doc_name} arrow>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontFamily: 'monospace',
-                                    fontWeight: 500,
-                                    display: 'block',
-                                    maxWidth: '40ch',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {doc.doc_name}
-                                </Typography>
-                              </Tooltip>
-                            </Box>
-                          </Box>
-                        )}
-                      </TableCell>
-                      {tableHeaders.map((header) => (
-                        <TableCell key={`${doc.doc_id || doc.id}-${header}`} sx={{
-                          backgroundColor: (t) =>
-                            t.palette.mode === "dark" ? t.palette.background.paper : "#f9fafb",
-                        }}>
-                          {editingCell && editingCell.rowKey === getRowKey(doc) && editingCell.fieldName === header ? (
-                            <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                              <TextField
-                                size="small"
-                                fullWidth
-                                value={editValue}
-                                onChange={(e) => setEditValue(e.target.value)}
-                                disabled={savingEdit}
-                              />
-                              <IconButton color="primary" onClick={applyEdit} disabled={savingEdit}>
-                                <CheckIcon fontSize="small" />
-                              </IconButton>
-                              <IconButton onClick={cancelEdit} disabled={savingEdit}>
-                                <CloseIcon fontSize="small" />
-                              </IconButton>
-                            </Box>
                           ) : (
-                            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
-                              {(() => {
-                                const raw = getFieldValueByDocId(doc.doc_id || doc.id, header);
-                                const value = raw === null || raw === 'NULL' ? 'Processing' : raw;
-                                return (
-                                  <Tooltip title={String(value)} arrow>
-                                    <Typography
-                                      variant="body2"
-                                      sx={{
-                                        fontStyle: value === 'Processing' ? 'italic' : 'normal',
-                                        color: value === 'Processing' ? 'text.secondary' : 'text.primary',
-                                        display: 'block',
-                                        maxWidth: '30ch',
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        whiteSpace: 'nowrap'
-                                      }}
-                                      title={String(value)}
-                                    >
-                                      {value}
-                                    </Typography>
-                                  </Tooltip>
-                                );
-                              })()}
-                              <IconButton size="small" onClick={() => {
-                                const current = getFieldValueByDocId(doc.doc_id || doc.id, header);
-                                startEdit(getRowKey(doc), header, current === null || current === 'NULL' ? '' : current);
-                              }}>
-                                <EditOutlinedIcon fontSize="small" />
-                              </IconButton>
-                            </Box>
+                            <Tooltip title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))} arrow>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontStyle:
+                                    getFieldValue(doc, header) === "NULL"
+                                      ? "italic"
+                                      : "normal",
+                                  color:
+                                    getFieldValue(doc, header) === "NULL"
+                                      ? "text.secondary"
+                                      : "text.primary",
+                                  display: "block",
+                                  maxWidth: "30ch",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                  whiteSpace: "nowrap",
+                                }}
+                                title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))}
+                              >
+                                {getFieldValue(doc, header)}
+                              </Typography>
+                            </Tooltip>
                           )}
                         </TableCell>
                       ))}
