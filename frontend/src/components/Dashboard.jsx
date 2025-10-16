@@ -593,23 +593,13 @@ const handleExport = () => {
           </Button>
           </Box>
 
-          {loadingResults ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}>
-              <CircularProgress />
-            </Box>
-          ) : extractionResults.length === 0 ? (
-            <Box sx={{ textAlign: 'center', p: 3 }}>
-              <Typography color="text.secondary">
-                No extraction results available. Process some documents first.
-              </Typography>
-            </Box>
-          ) : tableHeaders.length === 0 ? (
+          {tableHeaders.length === 0 ? (
             <Box sx={{ textAlign: 'center', p: 3 }}>
               <Typography color="text.secondary" gutterBottom>
-                No meaningful data extracted from the documents.
+                No fields configured yet for this project.
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                The system processed {extractionResults.length} document(s) but didn't find extractable information matching the expected fields.
+                Configure fields during project creation to see results.
               </Typography>
             </Box>
           ) : (
@@ -684,13 +674,17 @@ const handleExport = () => {
                     ))}
                   </TableRow>
                 </TableHead>
-                <TableBody 
-
-                >
-                  {console.log(extractionResults , "extractionResults")}
-                  {extractionResults.map((doc) => (
+                <TableBody>
+                  {docStatus.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={1 + tableHeaders.length} align="center">
+                        <Typography color="text.secondary">No documents yet.</Typography>
+                      </TableCell>
+                    </TableRow>
+                  ) : null}
+                  {docStatus.map((doc) => (
                     <TableRow
-                      // key={doc.id}
+                      key={doc.doc_id || doc.id}
                       
                       hover
                       sx={{
@@ -731,7 +725,7 @@ const handleExport = () => {
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-start' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                               <DescriptionIcon fontSize="small" color="action" />
-                              <Tooltip title={doc.fileName} arrow>
+                              <Tooltip title={doc.doc_name} arrow>
                                 <Typography
                                   variant="body2"
                                   sx={{
@@ -744,7 +738,7 @@ const handleExport = () => {
                                     whiteSpace: 'nowrap',
                                   }}
                                 >
-                                  {doc.fileName}
+                                  {doc.doc_name}
                                 </Typography>
                               </Tooltip>
                             </Box>
@@ -752,7 +746,7 @@ const handleExport = () => {
                         )}
                       </TableCell>
                       {tableHeaders.map((header) => (
-                        <TableCell key={`${doc.id}-${header}`} sx={{
+                        <TableCell key={`${doc.doc_id || doc.id}-${header}`} sx={{
                           backgroundColor: (t) =>
                             t.palette.mode === "dark" ? t.palette.background.paper : "#f9fafb",
                         }}>
@@ -774,24 +768,33 @@ const handleExport = () => {
                             </Box>
                           ) : (
                             <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 1 }}>
-                              <Tooltip title={String(getFieldValue(doc, header))} arrow>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontStyle: getFieldValue(doc, header) === 'NULL' ? 'italic' : 'normal',
-                                    color: getFieldValue(doc, header) === 'NULL' ? 'text.secondary' : 'text.primary',
-                                    display: 'block',
-                                    maxWidth: '30ch',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap'
-                                  }}
-                                  title={String(getFieldValue(doc, header))}
-                                >
-                                  {getFieldValue(doc, header)}
-                                </Typography>
-                              </Tooltip>
-                              <IconButton size="small" onClick={() => startEdit(getRowKey(doc), header, getFieldValue(doc, header))}>
+                              {(() => {
+                                const raw = getFieldValueByDocId(doc.doc_id || doc.id, header);
+                                const value = raw === null || raw === 'NULL' ? 'Processing' : raw;
+                                return (
+                                  <Tooltip title={String(value)} arrow>
+                                    <Typography
+                                      variant="body2"
+                                      sx={{
+                                        fontStyle: value === 'Processing' ? 'italic' : 'normal',
+                                        color: value === 'Processing' ? 'text.secondary' : 'text.primary',
+                                        display: 'block',
+                                        maxWidth: '30ch',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        whiteSpace: 'nowrap'
+                                      }}
+                                      title={String(value)}
+                                    >
+                                      {value}
+                                    </Typography>
+                                  </Tooltip>
+                                );
+                              })()}
+                              <IconButton size="small" onClick={() => {
+                                const current = getFieldValueByDocId(doc.doc_id || doc.id, header);
+                                startEdit(getRowKey(doc), header, current === null || current === 'NULL' ? '' : current);
+                              }}>
                                 <EditOutlinedIcon fontSize="small" />
                               </IconButton>
                             </Box>
