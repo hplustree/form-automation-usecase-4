@@ -691,45 +691,27 @@ const handleExport = () => {
                             t.palette.mode === "dark" ? t.palette.background.paper : "#f9fafb",
                         }}
                       >
-                        {editingCell && editingCell.rowKey === getRowKey(doc)  ? (
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-start' }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <TextField
-                              size="small"
-                              fullWidth
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              disabled={savingEdit}
-                            />
-                            <IconButton color="primary" onClick={applyEdit} disabled={savingEdit}>
-                              <CheckIcon fontSize="small" />
-                            </IconButton>
-                            <IconButton onClick={cancelEdit} disabled={savingEdit}>
-                              <CloseIcon fontSize="small" />
-                            </IconButton>
+                            <DescriptionIcon fontSize="small" color="action" />
+                            <Tooltip title={doc.fileName} arrow>
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontFamily: 'monospace',
+                                  fontWeight: 500,
+                                  display: 'block',
+                                  maxWidth: '40ch',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
+                                }}
+                              >
+                                {doc.fileName}
+                              </Typography>
+                            </Tooltip>
                           </Box>
-                        ) : (
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: 'flex-start' }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <DescriptionIcon fontSize="small" color="action" />
-                              <Tooltip title={doc.fileName} arrow>
-                                <Typography
-                                  variant="body2"
-                                  sx={{
-                                    fontFamily: 'monospace',
-                                    fontWeight: 500,
-                                    display: 'block',
-                                    maxWidth: '40ch',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                    whiteSpace: 'nowrap',
-                                  }}
-                                >
-                                  {doc.fileName}
-                                </Typography>
-                              </Tooltip>
-                            </Box>
-                          </Box>
-                        )}
+                        </Box>
                       </TableCell>
                       {tableHeaders.map((header) => (
                         <TableCell key={`${doc.id}-${header}`} sx={{

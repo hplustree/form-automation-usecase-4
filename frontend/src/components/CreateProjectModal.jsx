@@ -32,6 +32,8 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
+  const allChecked = fields.length > 0 && fields.every((i) => i.checked);
+  const someChecked = fields.some((i) => i.checked) && !allChecked;
 
   const handleFieldToggle = (itemId) => {
     setFields((prev) =>
@@ -39,6 +41,10 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
         item.id === itemId ? { ...item, checked: !item.checked } : item
       )
     );
+  };
+
+  const handleToggleAll = (checked) => {
+    setFields((prev) => prev.map((item) => ({ ...item, checked })));
   };
 
   const handleDragOver = (e) => {
@@ -356,6 +362,18 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
             >
               {fields.length > 0 ? (
                 <FormGroup>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={allChecked}
+                        indeterminate={someChecked}
+                        onChange={(e) => handleToggleAll(e.target.checked)}
+                        size="small"
+                      />
+                    }
+                    label="Select All"
+                    sx={{ ml: 1 }}
+                  />
                   {fields.map((item) => (
                     <FormControlLabel
                       key={item.id}
