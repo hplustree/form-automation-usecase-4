@@ -491,9 +491,9 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                     fontWeight: 500,
                                     display: "block",
                                     maxWidth: "40ch",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
+                                    // overflow: "hidden",
+                                    // textOverflow: "ellipsis",
+                                    // whiteSpace: "nowrap",
                                   }}
                                 >
                                   {doc.fileName}

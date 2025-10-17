@@ -69,11 +69,11 @@ export const getDocumentResults = async (projectId) => {
   };
 
 
-export const getTemplates = async (template_name = "spa_fields") => {
+export const getTemplates = async (template_name) => {
     try {
       const response = await axios.post(
         `${API_URL}/project/process-template`,
-        { template_name },
+        { template_name : template_name.code },
         {
           headers: {
             "Content-Type": "application/json",
@@ -86,6 +86,17 @@ export const getTemplates = async (template_name = "spa_fields") => {
     }
   };
   
+// Fetch available template names
+export const getTemplateNames = async () => {
+  try {
+    const response = await axios.get(`${API_URL}/project/get-templates`);
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching template names:", error);
+    throw error;
+  }
+};
+
 
 export const updateDocumentResult = async (projectId, docId, fieldName, value) => {
     try {

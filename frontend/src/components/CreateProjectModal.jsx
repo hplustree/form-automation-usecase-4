@@ -16,12 +16,16 @@ import {
   Paper,
   useMediaQuery,
   useTheme,
+  Select,
+  MenuItem,
+  FormControl,
+  InputLabel,
 } from "@mui/material";
 import {
   Close as CloseIcon,
 } from "@mui/icons-material";
 import { LuUpload } from "react-icons/lu";
-import { upload_file, getTemplates } from "../api/api";
+import { upload_file, getTemplates, getTemplateNames } from "../api/api";
 
 const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
   const [projectName, setProjectName] = useState("");
@@ -29,6 +33,11 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
   const [fields, setFields] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
+  const [templateName, setTemplateName] = useState("spa_fields");
+  const [templateOptions, setTemplateOptions] = useState([]);
+  const [templates, setTemplates] = useState([]);
+const [selectedTemplate, setSelectedTemplate] = useState("");
+
 
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
@@ -119,15 +128,12 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
       const projectData = {
         project_name: projectName,
         field_names: selectedFieldNames,
-        template_name: "spa_fields",
+        template_name: selectedTemplate || "spa_fields",
       };
   
       // Pre-seed by project name for immediate UI rendering on Dashboard
       // This lets the Results table appear instantly even before the upload finishes
       try {
-        // Remember the most recently created project name for Dashboard fallback
-        localStorage.setItem('last_created_project_name', projectName);
-
         // Save selected fields keyed by project name
         const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
         fieldsByName[projectName] = selectedFieldNames;
@@ -197,11 +203,6 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
               delete fieldsByName[projectName];
               localStorage.setItem('project_fields_map_by_name', JSON.stringify(fieldsByName));
             }
-            // Clear last created helper key
-            const last = localStorage.getItem('last_created_project_name');
-            if (last === projectName) {
-              localStorage.removeItem('last_created_project_name');
-            }
           } catch (e) {
             console.warn('Failed to cleanup name-based pre-seed', e);
           }
@@ -246,27 +247,73 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
     setProjectName("");
     setFields((prev) => prev.map((i) => ({ ...i, checked: false })));
     setUploadedFiles([]);
+    setTemplateName("spa_fields");
     onClose && onClose(...args);
   };
 
-  // useEffect
+  // Fetch template names when modal opens
   useEffect(() => {
-    const fetchTemplates = async () => {
+    if (!open) return;
+    const fetchTemplateNames = async () => {
       try {
-        const res = await getTemplates("spa_fields");
+        const data = await getTemplateNames();
+        let names = [];
+        if (Array.isArray(data)) names = data;
+        else if (data && Array.isArray(data.templates)) names = data.templates;
+        else if (data && data.data && Array.isArray(data.data)) names = data.data;
+        setTemplateOptions(names);
+        if (names && names.length && !names.includes(templateName)) {
+          setTemplateName(names[0]);
+        }
+      } catch (e) {
+        console.error("Failed to fetch template names", e);
+      }
+    };
+    fetchTemplateNames();
+  }, [open]);
+
+  // Fetch fields when template changes
+  useEffect(() => {
+    if (!open || !templateName) return;
+    const fetchFieldsForTemplate = async () => {
+      try {
+        const res = await getTemplates(templateName);
         if (res && res.fields) {
           const entries = Object.entries(res.fields);
           const mapped = entries.map(([id, label]) => ({ id, label, checked: false }));
           setFields(mapped);
+        } else {
+          setFields([]);
         }
       } catch (e) {
         console.error("Failed to fetch template fields", e);
+        setFields([]);
       }
     };
+    fetchFieldsForTemplate();
+  }, [open, templateName]);
+
+
+  useEffect(() => {
+    const fetchTemplateNames = async () => {
+      try {
+        const res = await getTemplateNames();
+        
+        // The API returns an array directly: [{"code":"spa_field","name":"Share Purchase Agreement"}]
+        if (res && Array.isArray(res)) {
+          setTemplates(res);
+          localStorage.setItem("cached_templates", JSON.stringify(res));
+        }
+      } catch (e) {
+        console.error("Failed to fetch template names", e);
+      }
+    };
+  
     if (open) {
-      fetchTemplates();
+      fetchTemplateNames();
     }
   }, [open]);
+  
 
   return (
     <Dialog
@@ -301,25 +348,57 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
       <DialogContent sx={{ pt: 0 }}>
         <Grid container spacing={3}>
           {/* Project Name */}
-          <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
-            Project Name
-          </Typography>
-          <TextField
-            fullWidth
-            placeholder="e.g., Q1 2024 Invoices"
-            value={projectName}
-            onChange={(e) => setProjectName(e.target.value)}
-            variant="outlined"
-          />
+          <Grid item xs={12} width={"100%"} >
+            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
+              Project Name
+            </Typography>
+            <TextField
+              fullWidth
+              placeholder="e.g., Q1 2024 Invoices"
+              value={projectName}
+              onChange={(e) => setProjectName(e.target.value)}
+              variant="outlined"
+              size="small"
+            />
+          </Grid>
+          </Grid>
+
+        <Grid container spacing={3}>
           
-          {/* Upload Documents */}
+        <Grid item xs={12} width={"100%"}>
+            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
+              Template
+            </Typography>
+            <TextField
+              fullWidth
+              select
+              value={selectedTemplate}
+              onChange={(e) => setSelectedTemplate(e.target.value)}
+              variant="outlined"
+              SelectProps={{ native: true }}
+            >
+             <option value="">Select a template</option>
+                {templates.map((template, index) => (
+                  <option key={index} value={template.code}>
+                    {template.code}
+                  </option>
+                ))}
+            </TextField>
+          </Grid>
+        </Grid> 
+
+          
+
+          <Grid container spacing={3} sx={{ mt: 1 }}>
+        {/* Upload Documents */}
           <Grid item xs={12}>
             <Typography
               variant="subtitle2"
               gutterBottom
               sx={{ fontWeight: 600 }}
             >
-              Upload Documents
+              {/* Upload Documents */}
+              {templates.find(t => t.code === selectedTemplate)?.name || "Upload Documents"}
             </Typography>
 
             <Paper
@@ -489,6 +568,7 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
             </Box>
           </Grid>
         </Grid>
+        {/* </Grid> */}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
