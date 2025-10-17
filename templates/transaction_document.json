@@ -1,0 +1,111 @@
+{
+  "code": "transaction_document",
+  "name": "Transaction Document",
+  "defaultMode": "medium",
+  "defaultModel": "gpt-5-mini",
+  "isActive": true,
+  "suggestion": "Please upload the transaction document (SPA/APA) to extract key legal and commercial terms.",
+  "fields": [
+    {
+      "code": "target",
+      "label": "Target Company",
+      "type": "llm",
+      "prompt": "What is the name of the company which the buyer is seeking to acquire? Respond with the company name and legal entity which the buyer is seeking to acquire.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "purchase_price",
+      "label": "Purchase Price",
+      "type": "llm",
+      "prompt": "What is the total purchase price or enterprise value of the transaction? Include currency and any relevant adjustments.",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "closing_conditions",
+      "label": "Closing Conditions",
+      "type": "llm",
+      "prompt": "List all conditions that must be satisfied prior to closing of the transaction.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "representations_warranties",
+      "label": "Key Representations and Warranties",
+      "type": "llm",
+      "prompt": "Summarize the key representations and warranties provided by the seller regarding the target company.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "indemnification",
+      "label": "Indemnification Provisions",
+      "type": "llm",
+      "prompt": "Describe the indemnification provisions, including survival periods, baskets, and caps.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "warranties_repeated",
+      "label": "Warranties Repeated?",
+      "type": "llm",
+      "prompt": "Are the warranties repeated at closing? If yes, summarize the key terms.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "warranty_limitations",
+      "label": "Warranty Limitations",
+      "type": "llm",
+      "prompt": "What are the limitations on warranties? Include any disclaimers or qualifiers.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "fundamental_warranties_bringdown",
+      "label": "Fundamental Warranties Bring-Down",
+      "type": "llm",
+      "prompt": "Is there a bring-down of fundamental warranties at closing? If yes, describe the terms.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "time_limitations",
+      "label": "Time Limitations for Claims",
+      "type": "llm",
+      "prompt": "What are the time limitations for bringing claims under the agreement?",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "governing_law",
+      "label": "Governing Law and Jurisdiction",
+      "type": "llm",
+      "prompt": "What is the governing law and jurisdiction for disputes under this agreement?",
+      "typeOfPrompt": "verbatim",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    }
+  ]
+}

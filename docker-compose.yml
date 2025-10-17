@@ -1,6 +1,24 @@
 version: '3.8'
 
 services:
+  # Frontend Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: dockerfile
+    container_name: siso-pipeline-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:8001
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - api
+    networks:
+      - pipeline-network
+
   # FastAPI Application
   api:
     build: .
@@ -91,8 +109,8 @@ services:
       - OPENAI_API_KEY_3=${OPENAI_API_KEY_3}
       - OPENAI_API_KEY_4=${OPENAI_API_KEY_4}
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      - REDIS_HOST=${REDIS_HOST:-redis}
-      - REDIS_PORT=${REDIS_PORT:-6379}
+      # - REDIS_HOST=${REDIS_HOST:-redis}
+      # - REDIS_PORT=${REDIS_PORT:-6379}
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
     command: --config /app/config.yaml --port 4000 --num_workers ${LITELLM_NUM_WORKERS:-25}

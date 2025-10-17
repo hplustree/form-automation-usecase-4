@@ -34,41 +34,40 @@ project_queue = Queue(QUEUE_NAME, connection=sync_redis)
 # Create the router
 project_router = APIRouter()
 
-@project_router.get("/get-templates", response_model=Dict[str, str])
-async def get_templates() -> Dict[str, str]:
+@project_router.get("/get-templates", response_model=List[Dict[str, Any]])
+async def get_templates() -> List[Dict[str, Any]]:
     """
     List all JSON template files in the templates directory and return their code and name.
-    Returns a dictionary with template codes as keys and template names as values.
+    Returns a list of objects, each with 'code' and 'name'.
     """
-    # Try relative path first
     templates_dir = Path("templates").resolve()
     if not templates_dir.exists():
-        # Fall back to absolute path if relative path doesn't work
         templates_dir = Path(__file__).parent.parent.parent / "templates"
     
-    templates = {}
-    
+    templates_list = []
+
     try:
-        # Ensure the directory exists
         if not templates_dir.exists():
             logger.warning(f"Templates directory not found: {templates_dir}")
-            return {}
-            
-        # Find all JSON files in the templates directory
+            return []
+
         json_files = list(templates_dir.glob("*.json"))
-        
+
         for json_file in json_files:
             try:
                 with open(json_file, 'r', encoding='utf-8') as f:
                     template_data = json.load(f)
                     if "code" in template_data and "name" in template_data:
-                        templates[template_data["code"]] = template_data["name"]
+                        templates_list.append({
+                            "code": template_data["code"],
+                            "name": template_data["name"]
+                        })
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning(f"Error reading template file {json_file}: {str(e)}")
                 continue
-                
-        return templates
-        
+
+        return templates_list
+
     except Exception as e:
         logger.error(f"Error listing templates: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error listing templates: {str(e)}")
@@ -112,6 +111,223 @@ def load_template(template_name: str) -> Dict[str, Any]:
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+# def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, Any]) -> Dict[str, str]:
+#     """
+#     Get model configuration with fallback mechanism.
+#     Order of precedence:
+#     1. Field-specific config (if model is specified)
+#     2. Template defaults (defaultModel and defaultMode)
+#     3. System defaults
+#     """
+#     logger.info(f"Getting model config for field: {field_config}")
+#     logger.info(f"Template config: {template_config}")
+    
+#     # System defaults (lowest priority)
+#     defaults = {
+#         "model": "gpt-5",
+#         "mode": "low",
+#         "type": "verbatim"
+#     }
+    
+#     # Template defaults (medium priority)
+#     template_defaults = {
+#         "model": template_config.get("defaultModel", defaults["model"]),
+#         "mode": template_config.get("defaultMode", defaults["mode"]),
+#         "type": field_config.get("typeOfPrompt", defaults["type"])
+#     }
+    
+#     # Field-specific config (highest priority)
+#     field_specific = {
+#         "model": field_config.get("model"),
+#         "mode": field_config.get("mode"),
+#         "type": field_config.get("typeOfPrompt")
+#     }
+    
+#     # Log the configuration sources
+#     logger.info(f"System defaults: {defaults}")
+#     logger.info(f"Template defaults: {template_defaults}")
+#     logger.info(f"Field specific config: {field_specific}")
+    
+#     # Build the final config with fallbacks
+#     final_config = {}
+#     for key in ["model", "mode", "type"]:
+#         # Use field-specific value if it exists and is not empty, otherwise fall back to template defaults, then system defaults
+#         final_config[key] = (
+#             field_specific.get(key) or 
+#             template_defaults.get(key) or 
+#             defaults.get(key)
+#         )
+    
+#     logger.info(f"Final model config: {final_config}")
+#     return final_config
+    
+#     # Merge with order of precedence
+#     config = {}
+#     for key in ["model", "mode", "type"]:
+#         field_val = field_specific.get(key)
+#         template_val = template_defaults.get(key)
+#         default_val = defaults[key]
+        
+#         logger.info(f"\nKey: {key}")
+#         logger.info(f"Field value: {field_val}")
+#         logger.info(f"Template value: {template_val}")
+#         logger.info(f"Default value: {default_val}")
+        
+#         config[key] = field_val or template_val or default_val
+#         logger.info(f"Selected value: {config[key]}")
+    
+#     # Ensure model is valid
+#     valid_models = {
+#         "gpt-5", "claude", "llama", "gemini",
+#         "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini" , "gpt-5-mini"
+#     }
+#     if config["model"].lower() not in valid_models:
+#         logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
+#         config["model"] = "gpt-5"
+    
+#     # Ensure mode is valid
+#     valid_modes = {"low", "medium", "high"}
+#     if config["mode"].lower() not in valid_modes:
+#         logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
+#         config["mode"] = "low"
+    
+#     # Ensure type is valid
+#     valid_types = {"verbatim", "summarize"}
+#     if config["type"].lower() not in valid_types:
+#         logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
+#         config["type"] = "verbatim"
+    
+#     return {
+#         "model": str(config["model"]).strip().lower(),
+#         "mode": str(config["mode"]).strip().lower(),
+#         "type": str(config["type"]).strip().lower()
+#     }
+#     logger.info(f"Getting model config for field: {field_config}")
+#     logger.info(f"Template config: {template_config}")
+    
+#     # System defaults (lowest priority)
+#     defaults = {
+#         "model": "gpt-5",
+#         "mode": "low",
+#         "type": "verbatim"
+#     }
+#     logger.info(f"System defaults: {defaults}")
+    
+#     # Template defaults (medium priority) - match the exact JSON field names
+#     template_defaults = {
+#         "model": template_config.get("defaultModel"),  # Matches JSON's defaultModel
+#         "mode": template_config.get("defaultMode"),    # Matches JSON's defaultMode
+#         "type": "verbatim"  # No template-level default for type
+#     }
+    
+#     logger.info(f"Template defaults: {template_defaults}")
+    
+#     # Field-specific config (highest priority) - match the exact JSON field names
+#     field_specific = {
+#         "model": field_config.get("model"),
+#         "mode": field_config.get("mode"),
+#         "type": field_config.get("typeOfPrompt")  # Matches JSON's typeOfPrompt
+#     }
+#     logger.info(f"Field specific config: {field_specific}")
+    
+#     # Merge with order of precedence
+#     config = {}
+#     for key in ["model", "mode", "type"]:
+#         field_val = field_specific.get(key)
+#         template_val = template_defaults.get(key)
+#         default_val = defaults[key]
+        
+#         logger.info(f"\nKey: {key}")
+#         logger.info(f"Field value: {field_val}")
+#         logger.info(f"Template value: {template_val}")
+#         logger.info(f"Default value: {default_val}")
+        
+#         config[key] = field_val or template_val or default_val
+#         logger.info(f"Selected value: {config[key]}")
+    
+#     # Ensure model is valid
+#     valid_models = {
+#         "gpt-5", "claude", "llama", "gemini",
+#         "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
+#     }
+#     if config["model"].lower() not in valid_models:
+#         logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
+#         config["model"] = "gpt-5"
+    
+#     # Ensure mode is valid
+#     valid_modes = {"low", "medium", "high"}
+#     if config["mode"].lower() not in valid_modes:
+#         logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
+#         config["mode"] = "low"
+    
+#     # Ensure type is valid
+#     valid_types = {"verbatim", "summarize"}
+#     if config["type"].lower() not in valid_types:
+#         logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
+#         config["type"] = "verbatim"
+    
+#     return {
+#         "model": str(config["model"]).strip().lower(),
+#         "mode": str(config["mode"]).strip().lower(),
+#         "type": str(config["type"]).strip().lower()
+#     }
+
+def get_available_models() -> set[str]:
+    """Load and parse the LiteLLM config to get available models."""
+    import yaml
+    from pathlib import Path
+    
+    try:
+        # Get the absolute path to the config file
+        config_path = Path(__file__).resolve().parent.parent.parent / "litellm" / "config.yaml"
+        logger.info(f"Looking for config file at: {config_path}")
+        
+        if not config_path.exists():
+            raise FileNotFoundError(f"Config file not found at {config_path}")
+            
+        with open(config_path, 'r') as f:
+            config = yaml.safe_load(f)
+            if not config:
+                raise ValueError("Config file is empty")
+        
+        # Log the loaded config (redact sensitive info)
+        config_log = {k: v for k, v in config.items() if k != 'model_list'}
+        logger.info(f"Loaded config (model_list excluded): {config_log}")
+        
+        # Extract unique model names from the config
+        models = set()
+        model_list = config.get('model_list', [])
+        logger.info(f"Found {len(model_list)} model configurations")
+        
+        for i, model_config in enumerate(model_list, 1):
+            try:
+                logger.debug(f"Processing model config {i}: {model_config}")
+                if 'model_name' in model_config:
+                    model_name = str(model_config['model_name']).strip().lower()
+                    models.add(model_name)
+                    logger.debug(f"Added model_name: {model_name}")
+                
+                if 'litellm_params' in model_config and 'model' in model_config['litellm_params']:
+                    model = str(model_config['litellm_params']['model']).strip().lower()
+                    models.add(model)
+                    logger.debug(f"Added model from litellm_params: {model}")
+            except Exception as e:
+                logger.warning(f"Error processing model config {i}: {str(e)}")
+                continue
+        
+        logger.info(f"Available models: {models}")
+        if not models:
+            raise ValueError("No valid models found in config")
+            
+        return models
+        
+    except Exception as e:
+        logger.error(f"Error loading LiteLLM config: {str(e)}. Using default models.")
+        # Return default models including gpt-5-mini
+        default_models = {"gpt-5", "gpt-4", "gpt-3.5-turbo", "claude", "llama", "gemini", "gpt-4.1-mini", "gpt-5-mini"}
+        logger.info(f"Using default models: {default_models}")
+        return default_models
+
 def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, Any]) -> Dict[str, str]:
     """
     Get model configuration with fallback mechanism.
@@ -119,9 +335,20 @@ def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, An
     1. Field-specific config (if model is specified)
     2. Template defaults (defaultModel and defaultMode)
     3. System defaults
+    
+    Args:
+        field_config: Configuration specific to the field being processed
+        template_config: Template-level configuration with defaults
+        
+    Returns:
+        Dictionary with model, mode, and type configurations
     """
     logger.info(f"Getting model config for field: {field_config}")
     logger.info(f"Template config: {template_config}")
+    
+    # Get available models from LiteLLM config
+    valid_models = get_available_models()
+    logger.info(f"Available models from config: {valid_models}")
     
     # System defaults (lowest priority)
     defaults = {
@@ -150,129 +377,102 @@ def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, An
     logger.info(f"Field specific config: {field_specific}")
     
     # Build the final config with fallbacks
-    final_config = {}
+    config = {}
     for key in ["model", "mode", "type"]:
         # Use field-specific value if it exists and is not empty, otherwise fall back to template defaults, then system defaults
-        final_config[key] = (
+        config[key] = (
             field_specific.get(key) or 
             template_defaults.get(key) or 
             defaults.get(key)
         )
     
-    logger.info(f"Final model config: {final_config}")
-    return final_config
-    
-    # Merge with order of precedence
-    config = {}
-    for key in ["model", "mode", "type"]:
-        field_val = field_specific.get(key)
-        template_val = template_defaults.get(key)
-        default_val = defaults[key]
-        
-        logger.info(f"\nKey: {key}")
-        logger.info(f"Field value: {field_val}")
-        logger.info(f"Template value: {template_val}")
-        logger.info(f"Default value: {default_val}")
-        
-        config[key] = field_val or template_val or default_val
-        logger.info(f"Selected value: {config[key]}")
-    
-    # Ensure model is valid
-    valid_models = {
-        "gpt-5", "claude", "llama", "gemini",
-        "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
-    }
-    if config["model"].lower() not in valid_models:
-        logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
-        config["model"] = "gpt-5"
-    
-    # Ensure mode is valid
-    valid_modes = {"low", "medium", "high"}
-    if config["mode"].lower() not in valid_modes:
-        logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
-        config["mode"] = "low"
-    
-    # Ensure type is valid
-    valid_types = {"verbatim", "summarize"}
-    if config["type"].lower() not in valid_types:
-        logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
-        config["type"] = "verbatim"
-    
-    return {
+    # Clean and validate the configuration
+    config = {
         "model": str(config["model"]).strip().lower(),
         "mode": str(config["mode"]).strip().lower(),
         "type": str(config["type"]).strip().lower()
     }
-    logger.info(f"Getting model config for field: {field_config}")
-    logger.info(f"Template config: {template_config}")
     
-    # System defaults (lowest priority)
-    defaults = {
-        "model": "gpt-5",
-        "mode": "low",
-        "type": "verbatim"
-    }
-    logger.info(f"System defaults: {defaults}")
+    # Debug: Print detailed information about the models
+    logger.info("=== DEBUG: Model Validation ===")
+    logger.info(f"Model to validate: '{config['model']}'")
+    logger.info(f"Type of model name: {type(config['model']).__name__}")
+    logger.info(f"Length of model name: {len(config['model'])}")
+    logger.info(f"Model name as bytes: {list(config['model'].encode('utf-8'))}")
     
-    # Template defaults (medium priority) - match the exact JSON field names
-    template_defaults = {
-        "model": template_config.get("defaultModel"),  # Matches JSON's defaultModel
-        "mode": template_config.get("defaultMode"),    # Matches JSON's defaultMode
-        "type": "verbatim"  # No template-level default for type
-    }
+    logger.info("\nAvailable models:")
+    for i, model in enumerate(sorted(valid_models), 1):
+        logger.info(f"{i}. '{model}' (type: {type(model).__name__}, length: {len(model)})")
+        logger.info(f"   Bytes: {list(model.encode('utf-8'))}")
     
-    logger.info(f"Template defaults: {template_defaults}")
+    logger.info("\nChecking for exact match...")
+    if config["model"] in valid_models:
+        logger.info(f"Found exact match for '{config['model']}' in valid_models")
+    else:
+        logger.warning(f"No exact match found for '{config['model']}' in valid_models")
     
-    # Field-specific config (highest priority) - match the exact JSON field names
-    field_specific = {
-        "model": field_config.get("model"),
-        "mode": field_config.get("mode"),
-        "type": field_config.get("typeOfPrompt")  # Matches JSON's typeOfPrompt
-    }
-    logger.info(f"Field specific config: {field_specific}")
+    logger.info("\nChecking for case-insensitive match...")
+    model_lower = config['model'].lower()
+    matching_models = [m for m in valid_models if m.lower() == model_lower]
+    if matching_models:
+        logger.info(f"Found case-insensitive match(es): {matching_models}")
+    else:
+        logger.warning("No case-insensitive matches found")
     
-    # Merge with order of precedence
-    config = {}
-    for key in ["model", "mode", "type"]:
-        field_val = field_specific.get(key)
-        template_val = template_defaults.get(key)
-        default_val = defaults[key]
-        
-        logger.info(f"\nKey: {key}")
-        logger.info(f"Field value: {field_val}")
-        logger.info(f"Template value: {template_val}")
-        logger.info(f"Default value: {default_val}")
-        
-        config[key] = field_val or template_val or default_val
-        logger.info(f"Selected value: {config[key]}")
+    logger.info("=== END DEBUG ===\n")
+    logger.info(f"Model type: {type(config['model'])}, valid_models type: {type(valid_models)}")
+    logger.info(f"Model repr: {repr(config['model'])}, valid_models: {[repr(m) for m in valid_models]}")
     
-    # Ensure model is valid
-    valid_models = {
-        "gpt-5", "claude", "llama", "gemini",
-        "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
-    }
-    if config["model"].lower() not in valid_models:
-        logging.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
-        config["model"] = "gpt-5"
+    # Check if model is in valid_models with different comparison methods
+    model_found = False
+    model_lower = config['model'].lower()
+    
+    # Method 1: Direct comparison
+    if config["model"] in valid_models:
+        model_found = True
+        logger.info(f"Found model using direct comparison: {config['model']}")
+    # Method 2: Case-insensitive comparison
+    elif any(m.lower() == model_lower for m in valid_models):
+        matching_models = [m for m in valid_models if m.lower() == model_lower]
+        config["model"] = matching_models[0]
+        model_found = True
+        logger.info(f"Found model using case-insensitive comparison: {matching_models[0]}")
+    # Method 3: Check for any substring match
+    elif any(model_lower in m.lower() or m.lower() in model_lower for m in valid_models):
+        matching_models = [m for m in valid_models if model_lower in m.lower() or m.lower() in model_lower]
+        config["model"] = matching_models[0]
+        model_found = True
+        logger.info(f"Found model using substring match: {matching_models[0]}")
+    
+    if not model_found:
+        logger.warning(f"Model '{config['model']}' not in valid models, using default 'gpt-5'")
+        logger.warning(f"Available models are: {valid_models}")
+        # Log the type of valid_models and config['model'] for debugging
+        logger.warning(f"valid_models type: {type(valid_models)}, model type: {type(config['model'])}")
+        # Try case-insensitive match as a fallback
+        model_lower = config['model'].lower()
+        matching_models = [m for m in valid_models if m.lower() == model_lower]
+        if matching_models:
+            logger.info(f"Found case-insensitive match for {config['model']}: {matching_models[0]}")
+            config["model"] = matching_models[0]
+        else:
+            logger.warning(f"No case-insensitive match found for {config['model']}, using default 'gpt-5'")
+            config["model"] = "gpt-5"
     
     # Ensure mode is valid
     valid_modes = {"low", "medium", "high"}
-    if config["mode"].lower() not in valid_modes:
-        logging.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
+    if config["mode"] not in valid_modes:
+        logger.warning(f"Mode '{config['mode']}' not valid, using default 'low'")
         config["mode"] = "low"
     
     # Ensure type is valid
     valid_types = {"verbatim", "summarize"}
-    if config["type"].lower() not in valid_types:
-        logging.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
+    if config["type"] not in valid_types:
+        logger.warning(f"Type '{config['type']}' not valid, using default 'verbatim'")
         config["type"] = "verbatim"
     
-    return {
-        "model": str(config["model"]).strip().lower(),
-        "mode": str(config["mode"]).strip().lower(),
-        "type": str(config["type"]).strip().lower()
-    }
-
+    logger.info(f"Final model config: {config}")
+    return config
 
 class FieldConfig(BaseModel):
     field_name: str = Field(..., description="Name of the field to extract")
@@ -284,23 +484,36 @@ class FieldConfig(BaseModel):
     @validator('model', pre=True)
     def validate_model(cls, v):
         if not v:
-            logging.warning("Model not specified, using default 'gpt-5'")
+            logger.warning("Model not specified, using default 'gpt-5'")
             return "gpt-5"
             
-        valid_models = {
-            "gpt-5", "claude", "llama", "gemini",
-            "gpt-4", "gpt-3.5-turbo", "gpt-4.1-mini"
-        }
-        
-        # Convert to lowercase for case-insensitive comparison
-        v_lower = v.lower()
-        
-        if v_lower not in valid_models:
-            logging.warning(f"Model '{v}' not in valid models, using default 'gpt-5'")
-            return "gpt-5"
+        try:
+            # Get available models from the LiteLLM config
+            valid_models = get_available_models()
+            logger.info(f"Available models in FieldConfig: {valid_models}")
             
-        logging.info(f"Using model: {v_lower}")
-        return v_lower
+            # Convert to lowercase for case-insensitive comparison
+            v_lower = v.lower()
+            
+            # Check if the model is in the valid models (case-insensitive)
+            if v_lower not in valid_models:
+                # Try case-insensitive match
+                matching_models = [m for m in valid_models if m.lower() == v_lower]
+                if matching_models:
+                    logger.info(f"Found case-insensitive match for '{v}': {matching_models[0]}")
+                    return matching_models[0]
+                
+                logger.warning(f"Model '{v}' not in valid models, using default 'gpt-5'")
+                logger.warning(f"Valid models are: {valid_models}")
+                return "gpt-5"
+                
+            logger.info(f"Using model: {v_lower}")
+            return v_lower
+            
+        except Exception as e:
+            logger.error(f"Error validating model '{v}': {str(e)}")
+            logger.warning(f"Falling back to default model 'gpt-5'")
+            return "gpt-5"
     
     @validator('mode')
     def validate_mode(cls, v):

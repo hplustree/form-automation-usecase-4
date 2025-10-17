@@ -1,0 +1,110 @@
+{
+  "code": "cim_background_info",
+  "name": "CIM / Background Information",
+  "defaultMode": "medium",
+  "defaultModel": "gpt-5-mini",
+  "isActive": true,
+  "suggestion": "Please upload the Confidential Information Memorandum (CIM) or background information document to extract company and financial details.",
+  "fields": [
+    {
+      "code": "company_overview",
+      "label": "Company Overview",
+      "type": "llm",
+      "prompt": "Provide a comprehensive overview of the company, including its business model, products/services, and market position.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "financial_summary",
+      "label": "Financial Summary",
+      "type": "llm",
+      "prompt": "Extract key financial information including revenue, EBITDA, and other relevant financial metrics for the last 3 years.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "market_analysis",
+      "label": "Market Analysis",
+      "type": "llm",
+      "prompt": "Summarize the market analysis including market size, growth trends, and competitive landscape.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "management_team",
+      "label": "Management Team",
+      "type": "llm",
+      "prompt": "List the key members of the management team and summarize their backgrounds and experience.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "product_services",
+      "label": "Products/Services",
+      "type": "llm",
+      "prompt": "Describe the company's main products or services in detail.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "customer_base",
+      "label": "Customer Base",
+      "type": "llm",
+      "prompt": "Describe the company's customer base, including key customers and customer concentration if any.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "supply_chain",
+      "label": "Supply Chain",
+      "type": "llm",
+      "prompt": "Describe the company's supply chain, including key suppliers and any dependencies.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "intellectual_property",
+      "label": "Intellectual Property",
+      "type": "llm",
+      "prompt": "List and describe the company's key intellectual property assets.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "growth_opportunities",
+      "label": "Growth Opportunities",
+      "type": "llm",
+      "prompt": "What are the key growth opportunities identified for the company?",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    },
+    {
+      "code": "risk_factors",
+      "label": "Key Risk Factors",
+      "type": "llm",
+      "prompt": "List and briefly describe the key risk factors mentioned in the document.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true
+    }
+  ]
+}

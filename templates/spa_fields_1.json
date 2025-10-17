@@ -1,10 +1,9 @@
 {
   "code": "spa_field_data",
   "name": "Share Purchase Agreement",
-  "defaultMode": "low",
+  "defaultMode": "medium",
   "defaultModel": "gpt-5",
   "isActive": true,
-  "suggestion": "Please upload the Share Purchase Agreement document to extract the fields.",
   "fields": [
     {
       "code": "target",
@@ -13,7 +12,7 @@
       "prompt": "What is the name of the company which the buyer is seeking to acquire? Respond with the company name and legal entity which the buyer is seeking to acquire. ",
       "typeOfPrompt": "verbatim",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -24,7 +23,7 @@
       "prompt": "Extract the description or details of the escrow account mentioned in this agreement, including the account location or bank.",
       "typeOfPrompt": "verbatim",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true
     },
     {
@@ -44,7 +43,7 @@
       "prompt": "Provide a brief overview of the company, including its founding year and core business. Keep the summary under 100 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -55,7 +54,7 @@
       "prompt": "Summarize the condition under which this agreement may be terminated as per the termination clause.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true
     },
     {
@@ -65,7 +64,7 @@
       "prompt": "How are disputes under this agreement to be resolved as per the Dispute Resolution clause?",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true
     },
     {
@@ -75,7 +74,7 @@
       "prompt": "Who are the Seller(s) listed in the SPA? List the underlying parties (e.g., sponsor or individual owners), along with the legal entities. Summarize in not more than 50 words.",
       "typeOfPrompt": "verbatim",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -86,7 +85,7 @@
       "prompt": "Who are the Buyer(s) listed in the SPA? List the underlying parties (e.g., sponsor or individual owners), along with the legal entities. Mention Not Available if its not provided. Summarize in not more than 50 words.",
       "typeOfPrompt": "verbatim",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -94,10 +93,10 @@
       "code": "sign_split",
       "label": "[Simultaneous / split] sign and close?",
       "type": "llm",
-      "prompt": "complete the following sentence by selecting the appropriate option: 'the transaction involves a [simultaneous / split] sign and close.'",
+      "prompt": "complete the folmediuming sentence by selecting the appropriate option: 'the transaction involves a [simultaneous / split] sign and close.'",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -108,7 +107,7 @@
       "prompt": "Are the title warranties repeated at closing? Respond with either: ‘The [title/fundamental] warranties are repeated at closing’ or ‘The [title/fundamental] warranties are not repeated at closing.’ Are the business/general warranties repeated at closing? Respond with either: ‘The [general/business] warranties are repeated at closing’ or ‘The [general/business] warranties are not repeated at closing.’ Are the tax warranties repeated at closing? Respond with either: ‘The tax warranties are repeated at closing’ or ‘The tax warranties are not repeated at closing.’",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -119,7 +118,7 @@
       "prompt": "respond with either “locked box” or “completion accounts.”, depending on the pricing mechanism used. Response should be not more than 2 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -130,7 +129,7 @@
       "prompt": "Is the transaction structured as a 100% sale, majority sale, or minority sale? Does it involve a rollover? Is it a deal structured as a share or asset deal? If rollover, please mention Seller shareholding percentage in the new structure, if available. Summarize in not more than 50 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -141,7 +140,7 @@
       "prompt": "Identify who is giving the warranties (e.g., sellers, buyers, management, or a combination). respond with the applicable parties (e.g., 'sellers and management') and mention with respect to either warranties given under the SPA or Management Warranty Deed.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -149,10 +148,10 @@
       "code": "time_limitations",
       "label": "Time Limitations",
       "type": "llm",
-      "prompt": "complete the following sentence with the applicable time limitations as stated in the agreement\n\n•\t[●] from completion for the Fundamental Warranties;\n•\t[●] from completion for the General Warranties; \n•\t[●] for the Tax Warranties; and\n•\t[●] for the Tax Indemnity\nAt the end, please mention \"Please see below for time periods required under the policy.\"",
+      "prompt": "complete the folmediuming sentence with the applicable time limitations as stated in the agreement\n\n•\t[●] from completion for the Fundamental Warranties;\n•\t[●] from completion for the General Warranties; \n•\t[●] for the Tax Warranties; and\n•\t[●] for the Tax Indemnity\nAt the end, please mention \"Please see bemedium for time periods required under the policy.\"",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -163,7 +162,7 @@
       "prompt": "If the SPA is governed by laws of Germany, respond with “Laws of the Federal Republic of Germany”, if not please state the Governing Law in not more than 10 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -171,21 +170,21 @@
       "code": "policy_type",
       "label": "Policy Type",
       "type": "llm",
-      "prompt": "Please identify the clause numbers and sub-clause numbers (example: clause 8.3.1 and 9.3.2) corresponding to each of the following and complete the statement below. Reference the relevant clauses directly. Please respond with:\n\"Buyer/Seller W&I policy to cover:\n•\tthe warranties given pursuant to clause [●] of the SPA and contained in Schedule [●] of the SPA (the “Fundamental Warranties”);\n•\tthe warranties given pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed]   (the “General Warranties”);\n•\tthe warranties given pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed] (the “Tax Warranties”); and\n•\tthe indemnity given [pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed] / in a market standard tax indemnity (if not yet provided)] (the “Tax Indemnity”).\"",
+      "prompt": "Please identify the clause numbers and sub-clause numbers (example: clause 8.3.1 and 9.3.2) corresponding to each of the folmediuming and complete the statement bemedium. Reference the relevant clauses directly. Please respond with:\n\"Buyer/Seller W&I policy to cover:\n•\tthe warranties given pursuant to clause [●] of the SPA and contained in Schedule [●] of the SPA (the “Fundamental Warranties”);\n•\tthe warranties given pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed]   (the “General Warranties”);\n•\tthe warranties given pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed] (the “Tax Warranties”); and\n•\tthe indemnity given [pursuant to clause [●] of the [SPA or Management Warranty Deed] and contained in Schedule [●] of the [SPA or Management Warranty Deed] / in a market standard tax indemnity (if not yet provided)] (the “Tax Indemnity”).\"",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
     {
       "code": "definition_of_loss",
-      "label": "Follow the definition of Loss as set out in clause [...] of the SPA.",
+      "label": "Folmedium the definition of Loss as set out in clause [...] of the SPA.",
       "type": "llm",
-      "prompt": "Inject the clause number (and the relevant schedule of the SPA, if applicable) of the definition of Loss from the SPA and complete the following: \"Follow the definition of Loss as set out in clause [...] of the SPA.\" If its not defined, respond with \"[Note to HWF: Loss is not defined in the SPA. Please review the SPA to confirm.]\"",
+      "prompt": "Inject the clause number (and the relevant schedule of the SPA, if applicable) of the definition of Loss from the SPA and complete the folmediuming: \"Folmedium the definition of Loss as set out in clause [...] of the SPA.\" If its not defined, respond with \"[Note to HWF: Loss is not defined in the SPA. Please review the SPA to confirm.]\"",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": false
     },
@@ -193,10 +192,10 @@
       "code": "indirect_damages",
       "label": "Include synthetic cover for reasonably foreseeable:\n(i)\tindirect and consequential damages;\n(ii)\tloss of profit.",
       "type": "llm",
-      "prompt": "If the liability of the Seller / Warrantor for (i) indirect and/or consequential damages; and/or (ii) loss of profit is not expressly limited in the SPA / MWD, then  please add the following note: „[Note to HWF: Propose to delete this row as the such loss / damages do not appear to be expressly excluded]“.",
+      "prompt": "If the liability of the Seller / Warrantor for (i) indirect and/or consequential damages; and/or (ii) loss of profit is not expressly limited in the SPA / MWD, then  please add the folmediuming note: „[Note to HWF: Propose to delete this row as the such loss / damages do not appear to be expressly excluded]“.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": false
     },
@@ -207,7 +206,7 @@
       "prompt": "Please describe the company's products and services. Provide detailed description on each of the key products/services. Include headline figures if available (e.g., market share, number of units, client coverage). Please provide summary not exceeding 100 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -218,7 +217,7 @@
       "prompt": "please provide an overview of the company's suppliers, including supplier concentration. Please specific (if available) whether the supplier base is concentrated or diversified/fragmented. Please provide summary not exceeding 50 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -229,7 +228,7 @@
       "prompt": "Please provide provide an overview of the company’s customers, including whether the company's customer base is concentrated or diversified. Go on to mention key customers of the company if available. Please provide summary not exceeding 70 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -240,7 +239,7 @@
       "prompt": "please provide an overview of the Company's history. Do not mention overview or products/services please (as we have that point covered elsewhere). Summarize in 2-3 lines.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -251,7 +250,7 @@
       "prompt": "Please provide background on the management team. Keep it high level executive summary. Summarize in 2-3 lines.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -262,7 +261,7 @@
       "prompt": "Provide the total number of employees. Provide any important or relevant breakdown if provided. Please provide summary not exceeding 50 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -273,7 +272,7 @@
       "prompt": "If the document category \"geographic footprint matrix\" exists, please respond with \"Please refer to geographic footprint matrix\", otherwise please summarise the total number of locations and countries, where it has a physical presence and also where it operates or genertes revenues - if more than 10 only summarize the key countries or territories (do not list them all!).  What is the revenue split and ebitda split by geography where such data is available? Is the company active in, or does it operate within, any high risk jurisdiction such as those sanctioned by OFAC or the Council of the European Union? Limit your answer to 100 words in total.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -284,7 +283,7 @@
       "prompt": "is it an asset light or Asset heavy business model based on whether the Assets owned or leased? Please provide summary not exceeding 100 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -295,7 +294,7 @@
       "prompt": "Summarize the information provided on intellectual property (IP), including (if available) its whether it is owned or licensed and number of active patents. Limit the summary to a maximum of 70 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -306,7 +305,7 @@
       "prompt": "Please comment on the company’s historic M&A activity.  If there is a notable transaction please mention. If information is available, What has been the company’s growth model: organic, buy and build, or a combination of both? Please provide summary not exceeding 70 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -314,21 +313,21 @@
       "code": "financial_metrics",
       "label": "Financials",
       "type": "llm",
-      "prompt": "Please extract and provide Revenues and EBITDA (adjusted EBITDA if available) for the following periods: 2022, 2023, 2024, and 2025. Show all values in millions and include the appropriate currency symbol. Format the response as follows:\n-\t2022 Revenue: [enter currency symbol][enter 2022 revenue]m / EBITDA:  [enter currency symbol][enter 2022 EBITDA]m \n-\t2023 Revenue: [enter currency symbol][enter 2023 revenue]m / EBITDA:  [enter currency symbol][enter 2023 EBITDA]m \n-\t2024 Revenue: [enter currency symbol][enter 2024 revenue]m / EBITDA:  [enter currency symbol][enter 2024 EBITDA]m \n-\t2025 Revenue: [enter currency symbol][enter 2025 revenue]m / EBITDA:  [enter currency symbol][enter 2025 EBITDA]m \nIf any value is not available, indicate as “Not disclosed.”",
+      "prompt": "Please extract and provide Revenues and EBITDA (adjusted EBITDA if available) for the folmediuming periods: 2022, 2023, 2024, and 2025. Show all values in millions and include the appropriate currency symbol. Format the response as folmediums:\n-\t2022 Revenue: [enter currency symbol][enter 2022 revenue]m / EBITDA:  [enter currency symbol][enter 2022 EBITDA]m \n-\t2023 Revenue: [enter currency symbol][enter 2023 revenue]m / EBITDA:  [enter currency symbol][enter 2023 EBITDA]m \n-\t2024 Revenue: [enter currency symbol][enter 2024 revenue]m / EBITDA:  [enter currency symbol][enter 2024 EBITDA]m \n-\t2025 Revenue: [enter currency symbol][enter 2025 revenue]m / EBITDA:  [enter currency symbol][enter 2025 EBITDA]m \nIf any value is not available, indicate as “Not disclosed.”",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
     {
-      "code": "cashflows",
-      "label": "Cashflows",
+      "code": "cashfmediums",
+      "label": "Cashfmediums",
       "type": "llm",
-      "prompt": "Please comment on the cashflow position of the company. Mention 2022, 2023, 2024 an 2025 Free cash flow (FCF) and cashflow margins, etc. based on what's mentioned in the document and what is available. Please mention the corresponding years (alongside the numeric data) where applicable. Please summarize in not more than 100 words.",
+      "prompt": "Please comment on the cashfmedium position of the company. Mention 2022, 2023, 2024 an 2025 Free cash fmedium (FCF) and cashfmedium margins, etc. based on what's mentioned in the document and what is available. Please mention the corresponding years (alongside the numeric data) where applicable. Please summarize in not more than 100 words.",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     },
@@ -339,7 +338,7 @@
       "prompt": "Are there any contingent or known potential risks or liabilities and/or claims by the third parties identified (e.g., litigation, regulatory matters)? If identified, please respond with: “The contingent liability [insert details] may be suitable for a contingent policy or affirmative cover under the W&I policy.”",
       "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
-      "mode": "low",
+      "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
     }
