@@ -5,7 +5,7 @@ import hashlib
 import shutil
 from pathlib import Path
 from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Body
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Body, Path as PathParam
 from pydantic import BaseModel, Field, validator
 import redis as rqredis
 from rq import Queue
@@ -31,9 +31,47 @@ REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 86400 * 7))  # 7 days for
 sync_redis = rqredis.from_url(REDIS_URL)
 project_queue = Queue(QUEUE_NAME, connection=sync_redis)
 
+# Create the router
 project_router = APIRouter()
 
-from pathlib import Path
+@project_router.get("/get-templates", response_model=Dict[str, str])
+async def get_templates() -> Dict[str, str]:
+    """
+    List all JSON template files in the templates directory and return their code and name.
+    Returns a dictionary with template codes as keys and template names as values.
+    """
+    # Try relative path first
+    templates_dir = Path("templates").resolve()
+    if not templates_dir.exists():
+        # Fall back to absolute path if relative path doesn't work
+        templates_dir = Path(__file__).parent.parent.parent / "templates"
+    
+    templates = {}
+    
+    try:
+        # Ensure the directory exists
+        if not templates_dir.exists():
+            logger.warning(f"Templates directory not found: {templates_dir}")
+            return {}
+            
+        # Find all JSON files in the templates directory
+        json_files = list(templates_dir.glob("*.json"))
+        
+        for json_file in json_files:
+            try:
+                with open(json_file, 'r', encoding='utf-8') as f:
+                    template_data = json.load(f)
+                    if "code" in template_data and "name" in template_data:
+                        templates[template_data["code"]] = template_data["name"]
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning(f"Error reading template file {json_file}: {str(e)}")
+                continue
+                
+        return templates
+        
+    except Exception as e:
+        logger.error(f"Error listing templates: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error listing templates: {str(e)}")
 
 # Path to the templates directory
 TEMPLATES_DIR = Path("/app/templates")
@@ -523,11 +561,11 @@ async def submit_project(
 async def get_project_status(project_id: str, db: Session = Depends(get_db)):
     """Get the status of a project"""
     try:
-        logger.info(f"🔍 [Project {project_id}] Checking PostgreSQL for project data...")
+        # logger.info(f"🔍 [Project {project_id}] Checking PostgreSQL for project data...")
         db_project = ProjectOperations.get_project(db, project_id)
         
         if db_project:
-            logger.info(f"✅ [Project {project_id}] Found in PostgreSQL")
+            # logger.info(f"✅ [Project {project_id}] Found in PostgreSQL")
             # Get documents from database
             db_documents = DocumentOperations.get_project_documents(db, project_id)
             documents = [
@@ -798,8 +836,10 @@ async def process_template(template_name: str = Body(..., embed=True, descriptio
             'success': True,
             'message': f"Successfully processed template: {template_data.get('name', 'Unnamed Template')}",
             'fields': active_fields,  # key = code, value = label
-            'total_fields': len(active_fields)
+            'total_fields': len(active_fields),
+            'suggestion': template_data.get('suggestion', '')  # ✅ Added this line
         }
+        logger.info(response)
         
         logger.info(f"Successfully processed template. Found {len(active_fields)} active fields.")
         return response
