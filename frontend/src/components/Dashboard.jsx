@@ -197,8 +197,14 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       // If backend has no results yet, preserve any pre-seeded UI (do not overwrite)
       if (resultsArray.length > 0) {
         setExtractionResults(resultsArray);
-        const headers = extractTableHeaders(resultsArray);
-        if (headers.length) setTableHeaders(headers);
+        const headersFromBackend = extractTableHeaders(resultsArray);
+        const mergedHeaders = (tableHeaders && tableHeaders.length)
+          ? Array.from(new Set([...
+              tableHeaders,
+              ...headersFromBackend,
+            ]))
+          : headersFromBackend;
+        if (mergedHeaders.length) setTableHeaders(mergedHeaders);
       } else {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
