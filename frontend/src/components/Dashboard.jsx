@@ -885,9 +885,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                 fontWeight: 500,
                                 display: 'block',
                                 maxWidth: '40ch',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
-                                whiteSpace: 'nowrap',
+                                whiteSpace: 'normal',
+                                overflowWrap: 'anywhere',
+                                wordBreak: 'break-word',
+                                maxHeight: '10rem',
+                                overflowY: 'auto',
                               }}
                             >
                               {doc.fileName}
@@ -921,9 +923,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                   color: getFieldValue(doc, header) === 'NULL' ? 'text.secondary' : 'text.primary',
                                   display: 'block',
                                   maxWidth: '30ch',
-                                  overflow: 'hidden',
-                                  textOverflow: 'ellipsis',
-                                  whiteSpace: 'nowrap',
+                                  whiteSpace: 'normal',
+                                  overflowWrap: 'anywhere',
+                                  wordBreak: 'break-word',
+                                  maxHeight: '12rem',
+                                  overflowY: 'auto',
                                 }}
                                 title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))}
                               >
