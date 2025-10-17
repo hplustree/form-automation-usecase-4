@@ -70,21 +70,24 @@ export const getDocumentResults = async (projectId) => {
 
 
 export const getTemplates = async (template_name) => {
-    try {
-      const response = await axios.post(
-        `${API_URL}/project/process-template`,
-        { template_name : template_name.code },
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        }
-      );
-      return response.data;
-    } catch (error) {
-      console.error("Error fetching templates:", error);
-    }
-  };
+  try {
+    // const code = typeof template_name === "string" ? template_name : template_name?.code :   "");
+    // const code = template_name.code;
+    console.log(template_name , "code")
+    const response = await axios.post(
+      `${API_URL}/project/process-template`,
+      { template_name: template_name },
+      {
+        headers: {
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching templates:", error);
+  }
+};
   
 // Fetch available template names
 export const getTemplateNames = async () => {

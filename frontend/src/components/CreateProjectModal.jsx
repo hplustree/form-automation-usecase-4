@@ -33,7 +33,7 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
   const [fields, setFields] = useState([]);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
-  const [templateName, setTemplateName] = useState("spa_fields");
+  const [templateName, setTemplateName] = useState("");
   const [templateOptions, setTemplateOptions] = useState([]);
   const [templates, setTemplates] = useState([]);
 const [selectedTemplate, setSelectedTemplate] = useState("");
@@ -128,7 +128,7 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
       const projectData = {
         project_name: projectName,
         field_names: selectedFieldNames,
-        template_name: selectedTemplate || "spa_fields",
+        template_name: selectedTemplate,
       };
   
       // Pre-seed by project name for immediate UI rendering on Dashboard
@@ -247,7 +247,8 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
     setProjectName("");
     setFields((prev) => prev.map((i) => ({ ...i, checked: false })));
     setUploadedFiles([]);
-    setTemplateName("spa_fields");
+    setTemplateName("");
+    setSelectedTemplate("");
     onClose && onClose(...args);
   };
 
@@ -262,9 +263,6 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
         else if (data && Array.isArray(data.templates)) names = data.templates;
         else if (data && data.data && Array.isArray(data.data)) names = data.data;
         setTemplateOptions(names);
-        if (names && names.length && !names.includes(templateName)) {
-          setTemplateName(names[0]);
-        }
       } catch (e) {
         console.error("Failed to fetch template names", e);
       }
@@ -292,6 +290,21 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
     };
     fetchFieldsForTemplate();
   }, [open, templateName]);
+
+  // If no template is selected, ensure fields list is empty
+  useEffect(() => {
+    if (!open) return;
+    if (!templateName) {
+      setFields([]);
+    }
+  }, [open, templateName]);
+
+  // Keep templateName in sync with the user's selection
+  useEffect(() => {
+    if (selectedTemplate) {
+      setTemplateName(selectedTemplate);
+    }
+  }, [selectedTemplate]);
 
 
   useEffect(() => {
@@ -365,7 +378,7 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
 
         <Grid container spacing={3}>
           
-        <Grid item xs={12} width={"100%"}>
+        <Grid item xs={12} width={"100%"} mt={2} mb={2}>
             <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 600 }}>
               Template
             </Typography>
@@ -373,9 +386,10 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
               fullWidth
               select
               value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
+              onChange={(e) => { setSelectedTemplate(e.target.value); setTemplateName(e.target.value); }}
               variant="outlined"
               SelectProps={{ native: true }}
+              size="small"
             >
              <option value="">Select a template</option>
                 {templates.map((template, index) => (

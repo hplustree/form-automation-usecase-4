@@ -532,6 +532,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                     // overflow: "hidden",
                                     // textOverflow: "ellipsis",
                                     // whiteSpace: "nowrap",
+                                    // textOverflow: "break-word",
                                     whiteSpace: "normal",     
                                     wordBreak: "break-word"
                                   }}
