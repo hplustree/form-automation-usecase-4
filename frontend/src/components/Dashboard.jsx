@@ -778,172 +778,85 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
               component={Paper}
               sx={{
                 boxShadow: 1,
-                overflowX: "auto",
+                overflowX: 'auto',
                 bgcolor: (t) => t.palette.background.paper,
                 border: (t) => `1px solid ${t.palette.divider}`,
                 borderRadius: 1,
-                scrollbarWidth: "thin",
-                "&::-webkit-scrollbar": {
-                  height: 6,
-                },
-                "&::-webkit-scrollbar-thumb": {
-                  backgroundColor: (t) =>
-                    t.palette.mode === "dark"
-                      ? "rgba(255,255,255,0.25)"
-                      : "rgba(0,0,0,0.25)",
+                scrollbarWidth: 'thin',
+                '&::-webkit-scrollbar': { height: 6 },
+                '&::-webkit-scrollbar-thumb': {
+                  backgroundColor: (t) => t.palette.mode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)',
                   borderRadius: 8,
                 },
-                "&::-webkit-scrollbar-track": {
-                  backgroundColor: "transparent",
-                },
+                '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' },
               }}
             >
               <Table stickyHeader>
                 <TableHead
                   sx={{
-                    backgroundColor: (t) =>
-                      t.palette.mode === "dark"
-                        ? t.palette.background.default
-                        : "#eef2f7",
-                    "& .MuiTableCell-root": {
-                      color: (t) =>
-                        t.palette.mode === "dark"
-                          ? t.palette.text.primary
-                          : "#111827",
+                    backgroundColor: (t) => t.palette.mode === 'dark' ? t.palette.background.default : '#eef2f7',
+                    '& .MuiTableCell-root': {
+                      color: (t) => t.palette.mode === 'dark' ? t.palette.text.primary : '#111827',
                       borderBottom: (t) => `1px solid ${t.palette.divider}`,
                       fontWeight: 700,
-                      fontSize: "0.9rem",
+                      fontSize: '0.9rem',
                       py: 1.5,
-                    },
-                    // Ensure consistent header cell background
-                    "& .MuiTableCell-head": {
-                      backgroundColor: (t) =>
-                        t.palette.mode === "dark"
-                          ? t.palette.background.default
-                          : "#eef2f7",
                     },
                   }}
                 >
                   <TableRow>
-                    <TableCell sx={{ minWidth: 200 }}>
-                      File Name
-                    </TableCell>
-                    {tableHeaders.map((header) => (
-                      <TableCell key={header} sx={{ minWidth: 180 }}>
-                        <Tooltip title={header} arrow>
-                          <span>{formatFieldName(header)}</span>
-                        </Tooltip>
+                    <TableCell sx={{ minWidth: 220 }}>Field</TableCell>
+                    {extractionResults.map((doc) => (
+                      <TableCell key={doc.doc_id || doc.id} sx={{ minWidth: 220 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <DescriptionIcon fontSize='small' color='action' />
+                          <Tooltip title={doc.fileName} arrow>
+                            <Typography
+                              variant='body2'
+                              sx={{
+                                fontFamily: 'monospace',
+                                fontWeight: 500,
+                                display: 'block',
+                                maxWidth: '40ch',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              {doc.fileName}
+                            </Typography>
+                          </Tooltip>
+                        </Box>
                       </TableCell>
                     ))}
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {extractionResults.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={1 + tableHeaders.length} align="center">
-                        <Typography color="text.secondary">No results available.</Typography>
-                      </TableCell>
-                    </TableRow>
-                  ) : null}
-                  {extractionResults.map((doc) => (
-                    <TableRow
-                      key={doc.doc_id || doc.id}
-                      hover
-                      sx={{
-                        borderBottom: "1px solid",
-                        borderColor: "divider",
-                        "&:hover": {
-                          backgroundColor: (t) =>
-                            t.palette.mode === "dark"
-                              ? alpha(t.palette.common.white, 0.04)
-                              : alpha(t.palette.common.black, 0.04),
-                        },
-                      }}
-                    >
-                      <TableCell
-                        sx={{
-                          minWidth: 200,
-                          backgroundColor: (t) =>
-                            t.palette.mode === "dark"
-                              ? t.palette.background.paper
-                              : "#f9fafb",
-                        }}
-                      >
-                        <Box
-                          sx={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 1,
-                            justifyContent: "flex-start",
-                          }}
-                        >
-                          <Box
-                            sx={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 1,
-                            }}
-                          >
-                            <DescriptionIcon fontSize="small" color="action" />
-                            <Tooltip title={doc.fileName} arrow>
-                              <Typography
-                                variant="body2"
-                                sx={{
-                                  fontFamily: "monospace",
-                                  fontWeight: 500,
-                                  display: "block",
-                                  maxWidth: "40ch",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {doc.fileName}
-                              </Typography>
-                            </Tooltip>
-                          </Box>
-                        </Box>
-                      </TableCell>
-                      {tableHeaders.map((header) => (
-                        <TableCell
-                          key={`${doc.doc_id || doc.id}-${header}`}
-                          sx={{
-                            backgroundColor: (t) =>
-                              t.palette.mode === "dark"
-                                ? t.palette.background.paper
-                                : "#f9fafb",
-                          }}
-                        >
-                          {isEditing && header !== "doc_name" ? (
+                  {tableHeaders.map((header) => (
+                    <TableRow key={header}>
+                      <TableCell sx={{ fontWeight: 700 }}>{formatFieldName(header)}</TableCell>
+                      {extractionResults.map((doc) => (
+                        <TableCell key={`${doc.doc_id || doc.id}-${header}`}>
+                          {isEditing && header !== 'doc_name' ? (
                             <TextField
-                              size="small"
+                              size='small'
                               fullWidth
-                              value={
-                                (editedValues[getRowKey(doc)] && editedValues[getRowKey(doc)][header]) ?? String(getFieldValue(doc, header))
-                              }
-                              onChange={(e) =>
-                                handleFieldChange(getRowKey(doc), header, e.target.value)
-                              }
+                              value={(editedValues[getRowKey(doc)] && editedValues[getRowKey(doc)][header]) ?? String(getFieldValue(doc, header))}
+                              onChange={(e) => handleFieldChange(getRowKey(doc), header, e.target.value)}
                               disabled={savingEdit}
                             />
                           ) : (
                             <Tooltip title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))} arrow>
                               <Typography
-                                variant="body2"
+                                variant='body2'
                                 sx={{
-                                  fontStyle:
-                                    getFieldValue(doc, header) === "NULL"
-                                      ? "italic"
-                                      : "normal",
-                                  color:
-                                    getFieldValue(doc, header) === "NULL"
-                                      ? "text.secondary"
-                                      : "text.primary",
-                                  display: "block",
-                                  maxWidth: "30ch",
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
+                                  fontStyle: getFieldValue(doc, header) === 'NULL' ? 'italic' : 'normal',
+                                  color: getFieldValue(doc, header) === 'NULL' ? 'text.secondary' : 'text.primary',
+                                  display: 'block',
+                                  maxWidth: '30ch',
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'nowrap',
                                 }}
                                 title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))}
                               >
