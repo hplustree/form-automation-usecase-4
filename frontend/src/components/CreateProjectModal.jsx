@@ -122,9 +122,92 @@ const CreateProjectModal = ({ open, onClose, onCreateProject }) => {
         template_name: "spa_fields",
       };
   
+      // Pre-seed by project name for immediate UI rendering on Dashboard
+      // This lets the Results table appear instantly even before the upload finishes
+      try {
+        // Remember the most recently created project name for Dashboard fallback
+        localStorage.setItem('last_created_project_name', projectName);
+
+        // Save selected fields keyed by project name
+        const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
+        fieldsByName[projectName] = selectedFieldNames;
+        localStorage.setItem('project_fields_map_by_name', JSON.stringify(fieldsByName));
+
+        // Seed placeholder results ("Processing") for each selected file keyed by project name
+        const seedByName = uploadedFiles.map((f, idx) => {
+          const resultObj = {};
+          selectedFieldNames.forEach((fn) => {
+            resultObj[fn] = { value: 'Processing' };
+          });
+          return {
+            id: `temp_${idx}_${Date.now()}`,
+            doc_id: null,
+            fileName: f.name,
+            docName: f.name,
+            results: resultObj,
+          };
+        });
+        const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+        seedsMapByName[projectName] = seedByName;
+        localStorage.setItem('pending_results_seed_by_name', JSON.stringify(seedsMapByName));
+      } catch (e) {
+        console.warn('Failed to pre-seed by project name', e);
+      }
+
       if (uploadedFiles.length > 0) {
         const response = await upload_file(projectData, uploadedFiles);
         storeProjectIdByName(projectName, response.project_id);
+
+        // Persist selected fields for this project so Results table can show headers immediately
+        try {
+          const fieldsMap = JSON.parse(localStorage.getItem('project_fields_map')) || {};
+          fieldsMap[response.project_id] = selectedFieldNames;
+          localStorage.setItem('project_fields_map', JSON.stringify(fieldsMap));
+        } catch (e) {
+          console.warn('Failed to save project fields to localStorage', e);
+        }
+
+        // Seed placeholder results so Dashboard can render a table instantly
+        try {
+          const seed = uploadedFiles.map((f, idx) => {
+            const resultObj = {};
+            selectedFieldNames.forEach((fn) => {
+              resultObj[fn] = { value: 'Processing' };
+            });
+            return {
+              id: `temp_${idx}_${Date.now()}`,
+              doc_id: null,
+              fileName: f.name,
+              docName: f.name,
+              results: resultObj,
+            };
+          });
+          const seedsMap = JSON.parse(localStorage.getItem('pending_results_seed')) || {};
+          seedsMap[response.project_id] = seed;
+          localStorage.setItem('pending_results_seed', JSON.stringify(seedsMap));
+          // Optional: cleanup name-based seed now that we have a real project id
+          try {
+            const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+            if (seedsMapByName[projectName]) {
+              delete seedsMapByName[projectName];
+              localStorage.setItem('pending_results_seed_by_name', JSON.stringify(seedsMapByName));
+            }
+            const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
+            if (fieldsByName[projectName]) {
+              delete fieldsByName[projectName];
+              localStorage.setItem('project_fields_map_by_name', JSON.stringify(fieldsByName));
+            }
+            // Clear last created helper key
+            const last = localStorage.getItem('last_created_project_name');
+            if (last === projectName) {
+              localStorage.removeItem('last_created_project_name');
+            }
+          } catch (e) {
+            console.warn('Failed to cleanup name-based pre-seed', e);
+          }
+        } catch (e) {
+          console.warn('Failed to seed pending results to localStorage', e);
+        }
 
         console.log("Upload response:", response);
         // alert("Project created and files uploaded successfully!");

@@ -194,15 +194,17 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
             results: resultObj,
           };
         });
-
-      setExtractionResults(resultsArray);
-
-      // Extract table headers from the transformed results
-      const headers = extractTableHeaders(resultsArray);
-      setTableHeaders(headers);
+      // If backend has no results yet, preserve any pre-seeded UI (do not overwrite)
+      if (resultsArray.length > 0) {
+        setExtractionResults(resultsArray);
+        const headers = extractTableHeaders(resultsArray);
+        if (headers.length) setTableHeaders(headers);
+      } else {
+        console.log('No backend results yet; preserving pre-seeded table.');
+      }
       
       console.log("Processed extraction results:", resultsArray);
-      console.log("Generated table headers:", headers);
+      // console.log("Generated table headers:", headers);
       
     } catch (error) {
       console.error("Error fetching extraction results:", error);
@@ -211,19 +213,32 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
   };
 
-  // Load expected headers from localStorage by projectId, if available
+  // Load expected headers from localStorage. Prefer by projectId; fallback to project name pre-seed; then last created name
   useEffect(() => {
-    if (!selectedProjectId) return;
     try {
-      const fieldsMap = JSON.parse(localStorage.getItem('project_fields_map')) || {};
-      const headers = Array.isArray(fieldsMap[selectedProjectId]) ? fieldsMap[selectedProjectId] : [];
-      if (headers.length) {
-        setTableHeaders(headers);
+      let headers = [];
+      if (selectedProjectId) {
+        const fieldsMap = JSON.parse(localStorage.getItem('project_fields_map')) || {};
+        headers = Array.isArray(fieldsMap[selectedProjectId]) ? fieldsMap[selectedProjectId] : [];
       }
+      if ((!headers || headers.length === 0) && selectedProject?.name) {
+        const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
+        const nameHeaders = Array.isArray(fieldsByName[selectedProject.name]) ? fieldsByName[selectedProject.name] : [];
+        if (nameHeaders.length) headers = nameHeaders;
+      }
+      if ((!headers || headers.length === 0)) {
+        const lastCreated = localStorage.getItem('last_created_project_name');
+        if (lastCreated) {
+          const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
+          const lastHeaders = Array.isArray(fieldsByName[lastCreated]) ? fieldsByName[lastCreated] : [];
+          if (lastHeaders.length) headers = lastHeaders;
+        }
+      }
+      if (headers && headers.length) setTableHeaders(headers);
     } catch (e) {
       console.warn('Failed to load project fields from localStorage', e);
     }
-  }, [selectedProjectId]);
+  }, [selectedProjectId, selectedProject?.name]);
 
   const getStatusChip = (status) => {
     const statusConfig = {
@@ -386,19 +401,62 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   // Ensure hooks are always called in the same order (move above any early returns)
   useEffect(() => {
-    if (!selectedProjectId) return;
+    const lastCreated = localStorage.getItem('last_created_project_name');
+    if (!selectedProjectId && !selectedProject?.name && !lastCreated) return;
     // Clear previous project's data immediately to avoid stale display
     setDocStatus([]);
     setExtractionResults([]);
     setTableHeaders([]);
 
-    getProjectStatus();
-    const interval = setInterval(() => {
+    if (selectedProjectId) {
       getProjectStatus();
-    }, 10000);
+    }
 
-    return () => clearInterval(interval);
-  }, [selectedProjectId]);
+    // Preload pending seed (documents and placeholder field values) for immediate Results rendering
+    let seeded = false;
+    try {
+      if (selectedProjectId) {
+        const seedsMap = JSON.parse(localStorage.getItem('pending_results_seed')) || {};
+        const seed = Array.isArray(seedsMap[selectedProjectId]) ? seedsMap[selectedProjectId] : [];
+        if (seed.length) {
+          setExtractionResults(seed);
+          const headersFromSeed = extractTableHeaders(seed);
+          if (headersFromSeed.length) setTableHeaders(headersFromSeed);
+          seeded = true;
+        }
+      }
+      if (!seeded && selectedProject?.name) {
+        const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+        const nameSeed = Array.isArray(seedsMapByName[selectedProject.name]) ? seedsMapByName[selectedProject.name] : [];
+        if (nameSeed.length) {
+          setExtractionResults(nameSeed);
+          const headersFromNameSeed = extractTableHeaders(nameSeed);
+          if (headersFromNameSeed.length) setTableHeaders(headersFromNameSeed);
+          seeded = true;
+        }
+      }
+      if (!seeded && lastCreated) {
+        const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+        const lastSeed = Array.isArray(seedsMapByName[lastCreated]) ? seedsMapByName[lastCreated] : [];
+        if (lastSeed.length) {
+          setExtractionResults(lastSeed);
+          const headersFromLastSeed = extractTableHeaders(lastSeed);
+          if (headersFromLastSeed.length) setTableHeaders(headersFromLastSeed);
+          seeded = true;
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to load pending results seed from localStorage', e);
+    }
+
+    const interval = selectedProjectId ? setInterval(() => {
+      getProjectStatus();
+    }, 10000) : null;
+
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedProjectId, selectedProject?.name]);
 
   // Fetch results when switching to results tab (skip while editing)
   useEffect(() => {
@@ -413,6 +471,15 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       fetchExtractionResults();
     }
   }, [docStatus, tabValue, selectedProjectId, isEditing]);
+
+  // Continuous polling for extraction results while on Results tab and not editing
+  useEffect(() => {
+    if (!(tabValue === 0 && selectedProjectId && !isEditing)) return;
+    const interval = setInterval(() => {
+      fetchExtractionResults();
+    }, 7000);
+    return () => clearInterval(interval);
+  }, [tabValue, selectedProjectId, isEditing]);
 
   // Truncate long text for display
   const truncateText = (text, maxLength = 100) => {
@@ -805,7 +872,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                   }}
                 >
                   <TableRow>
-                    <TableCell sx={{ minWidth: 220 }}>Field</TableCell>
+                    <TableCell sx={{ minWidth: 220, position: 'sticky', left: 0, zIndex: 3, backgroundColor: (t) => t.palette.mode === 'dark' ? t.palette.background.default : '#eef2f7' }}>Field</TableCell>
                     {extractionResults.map((doc) => (
                       <TableCell key={doc.doc_id || doc.id} sx={{ minWidth: 220 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -834,7 +901,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                 <TableBody>
                   {tableHeaders.map((header) => (
                     <TableRow key={header}>
-                      <TableCell sx={{ fontWeight: 700 }}>{formatFieldName(header)}</TableCell>
+                      <TableCell sx={{ fontWeight: 700, position: 'sticky', left: 0, zIndex: 2, backgroundColor: (t) => t.palette.background.paper }}>{formatFieldName(header)}</TableCell>
                       {extractionResults.map((doc) => (
                         <TableCell key={`${doc.doc_id || doc.id}-${header}`}>
                           {isEditing && header !== 'doc_name' ? (
@@ -888,11 +955,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       {/* Processing Tab */}
       <TabPanel value={tabValue} index={1}>
         <Box 
-                sx={{ p:3 ,height: '50vh', width: '100%',
+                sx={{ p:3, width: '100%',
                   // backgroundColor:"#f5f6f7"
                  backgroundColor: (t) =>
             t.palette.mode === 'dark' ? t.palette.background.default : "#f5f6f7"
-                , borderRadius:2}}
+                , borderRadius:2, display: 'flex', flexDirection: 'column', maxHeight: '65vh', overflow: 'hidden'}}
 >
           <Typography variant="h6" gutterBottom sx={{ fontWeight: 500, color: (theme) =>
         theme.palette.mode === "dark" ? "white" : "#282C34",
@@ -906,7 +973,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
             Real-time status of document processing
           </Typography>
 
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin', '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { backgroundColor: (t) => t.palette.mode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)', borderRadius: 8 }, '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' } }}>
             {docStatus.length === 0 ? (
               <Typography color="text.secondary" sx={{ textAlign: 'center', p: 3 }}>
                 No documents in processing queue.
