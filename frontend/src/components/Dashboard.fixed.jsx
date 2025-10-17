@@ -491,9 +491,9 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                     fontWeight: 500,
                                     display: "block",
                                     maxWidth: "40ch",
-                                    // overflow: "hidden",
-                                    // textOverflow: "ellipsis",
-                                    // whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                    whiteSpace: "nowrap",
                                   }}
                                 >
                                   {doc.fileName}
@@ -529,9 +529,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                     color: getFieldValue(doc, header) === "NULL" ? "text.secondary" : "text.primary",
                                     display: "block",
                                     maxWidth: "30ch",
-                                    overflow: "hidden",
-                                    textOverflow: "ellipsis",
-                                    whiteSpace: "nowrap",
+                                    // overflow: "hidden",
+                                    // textOverflow: "ellipsis",
+                                    // whiteSpace: "nowrap",
+                                    whiteSpace: "normal",     
+                                    wordBreak: "break-word"
                                   }}
                                   title={String(getFieldValue(doc, header))}
                                 >
