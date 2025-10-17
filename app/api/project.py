@@ -347,6 +347,7 @@ class TemplateProcessResponse(BaseModel):
     message: str
     fields: Dict[str, str]  # key = code, value = label
     total_fields: int
+    suggestion: Optional[str] = None  
 
 
 
