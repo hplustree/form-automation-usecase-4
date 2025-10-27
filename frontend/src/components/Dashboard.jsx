@@ -361,6 +361,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     fetchExtractionResults();
   };
 
+  // Compute dynamic label for Processing tab
+  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => d.status === 'completed');
+  const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
+
   const startGlobalEdit = () => {
     setIsEditing(true);
     setEditedValues({});
@@ -767,7 +771,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           }}
         >
           <Tab label="Results" />
-          <Tab label="Processing" />
+          <Tab label={processingTabLabel} />
         </Tabs>
       </Box>
 
