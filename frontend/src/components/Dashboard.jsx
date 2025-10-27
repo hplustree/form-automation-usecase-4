@@ -110,6 +110,34 @@ const formatFieldName = (fieldName) => {
   return v === "" ? "NULL" : v;
 };
 
+ const exportToWord = (extractionResults, tableHeaders, projectName) => {
+  if (!extractionResults.length || !tableHeaders.length) return;
+
+  try {
+    const headers = ['File Name', ...tableHeaders.map((h) => formatFieldName(h))];
+    // Build HTML table
+    const thead = `<tr>${headers.map(h => `<th style="border:1px solid #ccc;padding:6px;text-align:left;">${h}</th>`).join('')}</tr>`;
+    const tbody = extractionResults.map(doc => {
+      const cols = [doc.fileName, ...tableHeaders.map(h => String(getFieldValueForExport(doc, h)))];
+      return `<tr>${cols.map(c => `<td style="border:1px solid #ccc;padding:6px;vertical-align:top;white-space:pre-wrap;">${c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`).join('')}</tr>`;
+    }).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${projectName} Results</title></head><body><h2>${projectName} - Extraction Results</h2><table style="border-collapse:collapse;">${thead}${tbody}</table></body></html>`;
+
+    const blob = new Blob([html], { type: 'application/msword;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `${projectName}_results.doc`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Error exporting to Word:', error);
+    alert('Error exporting data. Please try again.');
+  }
+ };
+
 const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [tabValue, setTabValue] = useState(0);
   const [docStatus, setDocStatus] = useState([]);
@@ -140,7 +168,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
   };
 
-  // Extract all fields from documents to create table headers (no filtering)
+  // Extract all fields from documents to create table headers (fallback only)
   const extractTableHeaders = (results) => {
     if (!results.length) return [];
 
@@ -158,6 +186,34 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     return Array.from(allFields).sort();
   };
 
+  // Read selected headers from sessionStorage (by projectId > name > last created name)
+  const getSelectedHeaders = () => {
+    try {
+      let headers = [];
+      if (selectedProjectId) {
+        const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+        headers = Array.isArray(fieldsMap[selectedProjectId]) ? fieldsMap[selectedProjectId] : [];
+      }
+      if ((!headers || headers.length === 0) && selectedProject?.name) {
+        const fieldsByName = JSON.parse(sessionStorage.getItem('project_fields_map_by_name')) || {};
+        const nameHeaders = Array.isArray(fieldsByName[selectedProject.name]) ? fieldsByName[selectedProject.name] : [];
+        if (nameHeaders.length) headers = nameHeaders;
+      }
+      if ((!headers || headers.length === 0)) {
+        const lastCreated = sessionStorage.getItem('last_created_project_name');
+        if (lastCreated) {
+          const fieldsByName = JSON.parse(sessionStorage.getItem('project_fields_map_by_name')) || {};
+          const lastHeaders = Array.isArray(fieldsByName[lastCreated]) ? fieldsByName[lastCreated] : [];
+          if (lastHeaders.length) headers = lastHeaders;
+        }
+      }
+      return Array.isArray(headers) ? headers : [];
+    } catch (e) {
+      console.warn('Failed to load project fields from sessionStorage', e);
+      return [];
+    }
+  };
+
   const fetchExtractionResults = async () => {
     if (!selectedProjectId) return;
     
@@ -170,7 +226,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
       const docsMap = apiResponse?.documents || {};
 
-      // Transform backend shape to table-friendly shape (no filtering, include all available results)
+      // Transform backend shape to table-friendly shape (include all available results; filtering is via headers)
       const resultsArray = Object.entries(docsMap)
         .map(([docId, docData]) => {
           const resultObj = {};
@@ -197,14 +253,13 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       // If backend has no results yet, preserve any pre-seeded UI (do not overwrite)
       if (resultsArray.length > 0) {
         setExtractionResults(resultsArray);
-        const headersFromBackend = extractTableHeaders(resultsArray);
-        const mergedHeaders = (tableHeaders && tableHeaders.length)
-          ? Array.from(new Set([...
-              tableHeaders,
-              ...headersFromBackend,
-            ]))
-          : headersFromBackend;
-        if (mergedHeaders.length) setTableHeaders(mergedHeaders);
+        const preferred = getSelectedHeaders();
+        if (preferred.length) {
+          setTableHeaders(preferred);
+        } else {
+          const headersFromBackend = extractTableHeaders(resultsArray);
+          if (headersFromBackend.length) setTableHeaders(headersFromBackend);
+        }
       } else {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
@@ -219,31 +274,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
   };
 
-  // Load expected headers from localStorage. Prefer by projectId; fallback to project name pre-seed; then last created name
+  // Load expected headers from sessionStorage. Prefer by projectId; fallback to project name pre-seed; then last created name
   useEffect(() => {
-    try {
-      let headers = [];
-      if (selectedProjectId) {
-        const fieldsMap = JSON.parse(localStorage.getItem('project_fields_map')) || {};
-        headers = Array.isArray(fieldsMap[selectedProjectId]) ? fieldsMap[selectedProjectId] : [];
-      }
-      if ((!headers || headers.length === 0) && selectedProject?.name) {
-        const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
-        const nameHeaders = Array.isArray(fieldsByName[selectedProject.name]) ? fieldsByName[selectedProject.name] : [];
-        if (nameHeaders.length) headers = nameHeaders;
-      }
-      if ((!headers || headers.length === 0)) {
-        const lastCreated = localStorage.getItem('last_created_project_name');
-        if (lastCreated) {
-          const fieldsByName = JSON.parse(localStorage.getItem('project_fields_map_by_name')) || {};
-          const lastHeaders = Array.isArray(fieldsByName[lastCreated]) ? fieldsByName[lastCreated] : [];
-          if (lastHeaders.length) headers = lastHeaders;
-        }
-      }
-      if (headers && headers.length) setTableHeaders(headers);
-    } catch (e) {
-      console.warn('Failed to load project fields from localStorage', e);
-    }
+    const headers = getSelectedHeaders();
+    if (headers && headers.length) setTableHeaders(headers);
   }, [selectedProjectId, selectedProject?.name]);
 
   const getStatusChip = (status) => {
@@ -316,6 +350,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   const handleExport = () => {
     exportToExcel(extractionResults, tableHeaders, selectedProject.name);
+  };
+
+  const handleExportWord = () => {
+    exportToWord(extractionResults, tableHeaders, selectedProject.name);
   };
 
   const handleViewResults = () => {
@@ -407,7 +445,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   // Ensure hooks are always called in the same order (move above any early returns)
   useEffect(() => {
-    const lastCreated = localStorage.getItem('last_created_project_name');
+    const lastCreated = sessionStorage.getItem('last_created_project_name');
     if (!selectedProjectId && !selectedProject?.name && !lastCreated) return;
     // Clear previous project's data immediately to avoid stale display
     setDocStatus([]);
@@ -422,37 +460,49 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     let seeded = false;
     try {
       if (selectedProjectId) {
-        const seedsMap = JSON.parse(localStorage.getItem('pending_results_seed')) || {};
+        const seedsMap = JSON.parse(sessionStorage.getItem('pending_results_seed')) || {};
         const seed = Array.isArray(seedsMap[selectedProjectId]) ? seedsMap[selectedProjectId] : [];
         if (seed.length) {
           setExtractionResults(seed);
-          const headersFromSeed = extractTableHeaders(seed);
-          if (headersFromSeed.length) setTableHeaders(headersFromSeed);
+          const preferred = getSelectedHeaders();
+          if (preferred.length) setTableHeaders(preferred);
+          else {
+            const headersFromSeed = extractTableHeaders(seed);
+            if (headersFromSeed.length) setTableHeaders(headersFromSeed);
+          }
           seeded = true;
         }
       }
       if (!seeded && selectedProject?.name) {
-        const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+        const seedsMapByName = JSON.parse(sessionStorage.getItem('pending_results_seed_by_name')) || {};
         const nameSeed = Array.isArray(seedsMapByName[selectedProject.name]) ? seedsMapByName[selectedProject.name] : [];
         if (nameSeed.length) {
           setExtractionResults(nameSeed);
-          const headersFromNameSeed = extractTableHeaders(nameSeed);
-          if (headersFromNameSeed.length) setTableHeaders(headersFromNameSeed);
+          const preferred = getSelectedHeaders();
+          if (preferred.length) setTableHeaders(preferred);
+          else {
+            const headersFromNameSeed = extractTableHeaders(nameSeed);
+            if (headersFromNameSeed.length) setTableHeaders(headersFromNameSeed);
+          }
           seeded = true;
         }
       }
       if (!seeded && lastCreated) {
-        const seedsMapByName = JSON.parse(localStorage.getItem('pending_results_seed_by_name')) || {};
+        const seedsMapByName = JSON.parse(sessionStorage.getItem('pending_results_seed_by_name')) || {};
         const lastSeed = Array.isArray(seedsMapByName[lastCreated]) ? seedsMapByName[lastCreated] : [];
         if (lastSeed.length) {
           setExtractionResults(lastSeed);
-          const headersFromLastSeed = extractTableHeaders(lastSeed);
-          if (headersFromLastSeed.length) setTableHeaders(headersFromLastSeed);
+          const preferred = getSelectedHeaders();
+          if (preferred.length) setTableHeaders(preferred);
+          else {
+            const headersFromLastSeed = extractTableHeaders(lastSeed);
+            if (headersFromLastSeed.length) setTableHeaders(headersFromLastSeed);
+          }
           seeded = true;
         }
       }
     } catch (e) {
-      console.warn('Failed to load pending results seed from localStorage', e);
+      console.warn('Failed to load pending results seed from sessionStorage', e);
     }
 
     const interval = selectedProjectId ? setInterval(() => {
@@ -797,7 +847,24 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                       py: 1,
                     }}
                   >
-                    Export Results
+                    Export Excel
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<DescriptionIcon />}
+                    onClick={handleExportWord}
+                    disabled={
+                      extractionResults.length === 0 || tableHeaders.length === 0
+                    }
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    Export Word
                   </Button>
                 </>
               ) : (
