@@ -12,6 +12,7 @@ from rq import Queue
 from datetime import datetime
 import logging
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from app.logging_config import logger
 from app.db.database import get_db
 from app.db.operations import (
@@ -315,7 +316,6 @@ def get_available_models() -> set[str]:
                 logger.warning(f"Error processing model config {i}: {str(e)}")
                 continue
         
-        logger.info(f"Available models: {models}")
         if not models:
             raise ValueError("No valid models found in config")
             
@@ -394,11 +394,6 @@ def get_model_config(field_config: Dict[str, Any], template_config: Dict[str, An
     }
     
     # Debug: Print detailed information about the models
-    logger.info("=== DEBUG: Model Validation ===")
-    logger.info(f"Model to validate: '{config['model']}'")
-    logger.info(f"Type of model name: {type(config['model']).__name__}")
-    logger.info(f"Length of model name: {len(config['model'])}")
-    logger.info(f"Model name as bytes: {list(config['model'].encode('utf-8'))}")
     
     logger.info("\nAvailable models:")
     for i, model in enumerate(sorted(valid_models), 1):
@@ -839,12 +834,12 @@ async def get_project_status(project_id: str, db: Session = Depends(get_db)):
 async def get_project_results(project_id: str, db: Session = Depends(get_db)):
     """Get the extraction results for a project"""
     try:
-        logger.info(f"🔍 [Results {project_id}] Checking PostgreSQL for project results...")
+        # logger.info(f"🔍 [Results {project_id}] Checking PostgreSQL for project results...")
         
         # Get project from PostgreSQL
         db_project = ProjectOperations.get_project(db, project_id)
         if db_project:
-            logger.info(f"✅ [Results {project_id}] Found project in PostgreSQL")
+            # logger.info(f"✅ [Results {project_id}] Found project in PostgreSQL")
             project_data = {
                 "project_id": db_project.id,
                 "project_name": db_project.project_name,
@@ -856,7 +851,6 @@ async def get_project_results(project_id: str, db: Session = Depends(get_db)):
             document_map = {str(doc.id): doc.doc_name for doc in db_documents}
             
             # Get results from PostgreSQL
-            logger.info(f"📊 [Results {project_id}] Fetching field results from PostgreSQL...")
             results = FieldResultOperations.get_project_results(db, project_id)
             
             # Format results with document names
@@ -867,7 +861,6 @@ async def get_project_results(project_id: str, db: Session = Depends(get_db)):
                     "field_results": field_results
                 }
                 
-            logger.info(f"✅ [Results {project_id}] Retrieved {sum(len(doc['field_results']) for doc in documents.values())} field results from PostgreSQL")
         else:
             logger.warning(f"⚠️  [Results {project_id}] Project not found in PostgreSQL, checking Redis...")
             
@@ -902,7 +895,6 @@ async def get_project_results(project_id: str, db: Session = Depends(get_db)):
             documents=documents
         )
         
-        logger.info(f"✅ [Results {project_id}] Successfully returned {sum(len(doc_results) for doc_results in results.values())} field results")
         return response
         
     except HTTPException:
@@ -955,36 +947,73 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 
 # Add this new endpoint after the delete_project endpoint
-@project_router.get("/list")
-async def list_projects(
-    skip: int = 0,
+
+@project_router.get("", response_model=List[ProjectStatusResponse], summary="List all projects")
+async def list_all_projects(
+    skip: int = 0, 
     limit: int = 100,
-    status: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """List all projects with optional filtering"""
-    try:
-        projects = ProjectOperations.list_projects(db, skip, limit, status)
+    """
+    List all projects with their basic information.
+    
+    Args:
+        skip: Number of projects to skip (for pagination)
+        limit: Maximum number of projects to return (for pagination)
         
-        return {
-            "projects": [
-                {
-                    "project_id": p.id,
-                    "project_name": p.project_name,
-                    "status": p.status,
-                    "total_documents": p.total_documents,
-                    "processed_documents": p.processed_documents or 0,
-                    "failed_documents": p.failed_documents or 0,
-                    "created_at": p.created_at.isoformat(),
-                    "updated_at": p.updated_at.isoformat() if p.updated_at else p.created_at.isoformat()
-                }
-                for p in projects
-            ],
-            "total": len(projects)
-        }
+    Returns:
+        List of ProjectStatusResponse objects with project details
+    """
+    try:
+        # Test database connection first
+        try:
+            db.execute(text("SELECT 1"))
+        except Exception as db_error:
+            logger.error(f"Database connection error: {str(db_error)}")
+            raise HTTPException(
+                status_code=503,
+                detail="Unable to connect to the database. Please try again later."
+            )
+            
+        # Get projects using ProjectOperations for consistency
+        projects = db.query(Project).order_by(Project.created_at.desc()).offset(skip).limit(limit).all()
+        
+        if not projects:
+            logger.info("No projects found in the database")
+            return []
+            
+        # Convert to response model
+        result = []
+        for project in projects:
+            # Get document count for the project
+            document_count = len(project.documents) if hasattr(project, 'documents') else 0
+            
+            # Format timestamps, ensuring they're never None
+            created_at = project.created_at.isoformat() if project.created_at else datetime.utcnow().isoformat()
+            updated_at = project.updated_at.isoformat() if project.updated_at else created_at
+            
+            result.append(ProjectStatusResponse(
+                project_id=project.id,
+                project_name=project.project_name or "Unnamed Project",
+                status=project.status or "unknown",
+                total_documents=document_count,
+                processed_documents=project.processed_documents or 0,
+                failed_documents=project.failed_documents or 0,
+                created_at=created_at,
+                updated_at=updated_at,
+                documents=[]  # Not including documents in list view for performance
+            ))
+            
+        logger.info(f"Successfully retrieved {len(result)} projects")
+        return result
+        
     except Exception as e:
-        logger.error(f"Error listing projects: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to list projects: {str(e)}")
+        logger.error(f"Error listing projects: {str(e)}", exc_info=True)
+        # For other errors, return a generic error message
+        raise HTTPException(
+            status_code=500, 
+            detail=f"An error occurred while fetching projects: {str(e)}"
+        )
 
 
 @project_router.post("/process-template", response_model=TemplateProcessResponse)

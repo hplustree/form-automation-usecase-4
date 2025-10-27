@@ -113,7 +113,7 @@ services:
       # - REDIS_PORT=${REDIS_PORT:-6379}
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
-    command: --config /app/config.yaml --port 4000 --num_workers ${LITELLM_NUM_WORKERS:-25}
+    command: --config /app/config.yaml --port 4000 --num_workers ${LITELLM_NUM_WORKERS:-4}
     networks:
       - pipeline-network
 

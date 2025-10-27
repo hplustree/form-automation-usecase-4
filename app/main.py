@@ -94,7 +94,7 @@ app.add_middleware(
 
 # Include routers with prefixes
 app.include_router(project_router, prefix="/project", tags=["projects"])
-app.include_router(status_router, tags=["status"])
+# app.include_router(status_router, tags=["status"])
 
 
 @app.get("/health")

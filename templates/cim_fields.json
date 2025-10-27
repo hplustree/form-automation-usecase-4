@@ -1,0 +1,164 @@
+{
+  "code": "cim_fields",
+  "name": "CIM / Background Info",
+  "defaultMode": "medium",
+  "defaultModel": "gpt-5",
+  "isActive": true,
+  "suggestion": "Please upload the CIM or Background Info document to extract the fields.",
+  "fields": [
+    {
+      "code": "business_model",
+      "label": "Business Model",
+      "type": "llm",
+      "prompt": "Provide a brief overview of the company, including its founding year and core business. For example: 'the company is a leading provider of [enter value here]' or 'the company develops [enter value here]'. Continue with: 'It is the largest global player in [Z]' if applicable. Keep the summary under 100 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "product_description",
+      "label": "Description of Product",
+      "type": "llm",
+      "prompt": "Please describe the company's products and services. Provide detailed description on each of the key products/services. Include headline figures if available (e.g., market share, number of units, client coverage). Please provide summary not exceeding 100 words. ",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "suppliers",
+      "label": "Suppliers",
+      "type": "llm",
+      "prompt": "please provide an overview of the company's suppliers, including supplier concentration. Please specific (if available) whether the supplier base is concentrated or diversified/fragmented. Please provide summary not exceeding 50 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "customers",
+      "label": "Customers",
+      "type": "llm",
+      "prompt": "Please provide provide an overview of the company's customers, including whether the company's customer base is concentrated or diversified. Go on to mention key customers of the company if available. Please provide summary not exceeding 70 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "company_history",
+      "label": "Company history",
+      "type": "llm",
+      "prompt": "please provide an overview of the Company's history. Do not mention overview or products/services please (as we have that point covered elsewhere). Summarize in 2-3 lines.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "management_history",
+      "label": "Management history/standing",
+      "type": "llm",
+      "prompt": "Please provide background on the management team. Keep it high level executive summary.Summarize in 2-3 lines.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "employees",
+      "label": "Employees",
+      "type": "llm",
+      "prompt": "Provide the total number of employees. Provide any important or relevant breakdown if provided. Please provide summary not exceeding 50 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "geographic_footprint_matrix",
+      "label": "Geographic Footprint",
+      "type": "llm",
+      "prompt": "If the document category \"geographic footprint matrix\" exists, please respond with \"Please refer to geographic footprint matrix\", otherwise please summarise the total number of locations and countries, where it has a physical presence and also where it operates or genertes revenues - if more than 10 only summarize the key countries or territories (do not list them all!).  What is the revenue split and ebitda split by geography where such data is available? Is the company active in, or does it operate within, any high risk jurisdiction such as those sanctioned by OFAC or the Council of the European Union? Limit your answer to 100 words in total. ",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "assets",
+      "label": "Assets",
+      "type": "llm",
+      "prompt": "is it an asset light or Asset heavy business model based on whether the Assets owned or leased? Please provide summary not exceeding 100 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "intellectual_property",
+      "label": "Intellectual Property",
+      "type": "llm",
+      "prompt": "Summarize the information provided on intellectual property (IP), including (if available) its whether it is owned or licensed and number of active patents. Limit the summary to a maximum of 70 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "mna_activity",
+      "label": "M&A Activity",
+      "type": "llm",
+      "prompt": "Please comment on the company's historic M&A activity.  If there is a notable transaction please mention. If information is available, What has been the company's growth model: organic, buy and build, or a combination of both? Please provide summary not exceeding 70 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "financial_metrics",
+      "label": "Financials",
+      "type": "llm",
+      "prompt": "Please extract and provide Revenues and EBITDA (adjusted EBITDA if available) for the following periods: 2022, 2023, 2024, and 2025. Show all values in millions and include the appropriate currency symbol. Format the response as follows:\n-\t2022 Revenue: [enter currency symbol][enter 2022 revenue]m / EBITDA:  [enter currency symbol][enter 2022 EBITDA]m \n-\t2023 Revenue: [enter currency symbol][enter 2023 revenue]m / EBITDA:  [enter currency symbol][enter 2023 EBITDA]m \n-\t2024 Revenue: [enter currency symbol][enter 2024 revenue]m / EBITDA:  [enter currency symbol][enter 2024 EBITDA]m \n-\t2025 Revenue: [enter currency symbol][enter 2025 revenue]m / EBITDA:  [enter currency symbol][enter 2025 EBITDA]m \nIf any value is not available, indicate as 'Not disclosed.'",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "cashflows",
+      "label": "Cashflows",
+      "type": "llm",
+      "prompt": "Please comment on the cashflow position of the company. Mention 2022, 2023, 2024 an 2025 Free cash flow (FCF) and cashflow margins, etc. based on what's mentioned in the document and what is available. Please mention the corresponding years (alongside the numeric data) where applicable. Please summarize in not more than 100 words.",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    },
+    {
+      "code": "transaction_model",
+      "label": "Transaction Model",
+      "type": "llm",
+      "prompt": "Is the transaction structured as a 100% sale, majority sale, or minority sale? Does it involve a rollover? Is it a deal structured as a share or asset deal? If rollover, please mention Seller shareholding percentage in the new structure, if available. Summarize in not more than 50 words. ",
+      "typeOfPrompt": "summarize",
+      "model": "gpt-5-mini",
+      "mode": "medium",
+      "isActive": true,
+      "explanationNeeded": true
+    }
+  ]
+}

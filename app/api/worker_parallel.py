@@ -174,14 +174,14 @@ def process_document(document_id: str, project_id: str):
                 embeddings
             )
             
-            # Update document with chunk count
+            # Update document with chunk count and mark as chunks_ready (not completed yet)
             DocumentOperations.update_document_status(
-                db, document_id, "Completed",
+                db, document_id, "processing",
                 chunks_count=len(chunks),
                 page_count=max([c.get("page_number", 0) for c in chunks]) if chunks else 0
             )
             
-            # Mark document as completed in queue
+            # Mark document as completed in queue (for chunk processing)
             DocumentQueueOperations.complete_document(db, document_id, "completed")
             
             # Enqueue field extraction tasks for this document
@@ -212,11 +212,6 @@ def process_document(document_id: str, project_id: str):
             
             logger.info(f"Successfully processed document {document.doc_name} with {len(chunks)} chunks")
             logger.info(f"Enqueued {len(fields_config)} field extraction tasks")
-            DocumentOperations.update_document_status(
-                db, document_id, "completed",
-                chunks_count=len(chunks),
-                page_count=max([c.get("page_number", 0) for c in chunks]) if chunks else 0
-            )
             
         except Exception as e:
             logger.error(f"Error processing document {document.doc_name}: {str(e)}")
@@ -232,6 +227,7 @@ def process_document(document_id: str, project_id: str):
             
     finally:
         db.close()
+
 
 
 def process_field(document_id: str, project_id: str, field_name: str, field_config: Dict):
@@ -419,6 +415,9 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
             if field_queue_id:
                 FieldQueueOperations.complete_field(db, field_queue_id, "completed")
             
+            # Check if all fields for this document are completed
+            check_and_update_document_status(db, document_id, project_id)
+            
             # Update project progress
             check_and_update_project_status(db, project_id)
             
@@ -450,10 +449,65 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     error_message=str(e)
                 )
             
+            # Check if all fields for this document are completed (even with errors)
+            check_and_update_document_status(db, document_id, project_id)
+            
             raise
             
     finally:
         db.close()
+
+
+def check_and_update_document_status(db: Session, document_id: str, project_id: str):
+    """
+    Check if all fields for a document are completed and update document status accordingly.
+    """
+    try:
+        # Get document and project
+        document = DocumentOperations.get_document(db, document_id)
+        project = ProjectOperations.get_project(db, project_id)
+        
+        if not document or not project:
+            return
+        
+        # Skip if document is already completed or failed
+        if document.status in ["completed", "failed"]:
+            return
+        
+        # Get expected number of fields from project config
+        expected_fields = len(project.fields_config)
+        
+        # Get all field results for this document
+        field_results = db.query(FieldResult).filter(
+            FieldResult.document_id == document_id
+        ).all()
+        
+        # Count completed and failed fields
+        completed_fields = sum(1 for fr in field_results if fr.status == "completed")
+        failed_fields = sum(1 for fr in field_results if fr.status == "failed")
+        total_processed = completed_fields + failed_fields
+        
+        # Check if all fields are processed
+        if total_processed >= expected_fields:
+            if failed_fields == 0:
+                # All fields completed successfully
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed"
+                )
+                logger.info(f"Document {document_id} completed: all {completed_fields} fields processed successfully")
+            else:
+                # Some fields failed
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed",
+                    error_message=f"{failed_fields} field(s) failed extraction"
+                )
+                logger.warning(f"Document {document_id} completed with errors: {completed_fields} succeeded, {failed_fields} failed")
+        else:
+            # Still processing fields
+            logger.debug(f"Document {document_id}: {total_processed}/{expected_fields} fields processed")
+            
+    except Exception as e:
+        logger.error(f"Error updating document status: {str(e)}")
 
 
 def check_and_update_project_status(db: Session, project_id: str):
@@ -470,7 +524,7 @@ def check_and_update_project_status(db: Session, project_id: str):
         
         # Check document processing status
         total_docs = len(documents)
-        completed_docs = sum(1 for doc in documents if doc.status in ["chunks_ready", "completed"])
+        completed_docs = sum(1 for doc in documents if doc.status in ["completed", "completed_with_errors"])
         failed_docs = sum(1 for doc in documents if doc.status == "failed")
         
         # Check field processing status
