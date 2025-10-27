@@ -42,6 +42,8 @@ const Sidebar = ({
         // backgroundColor:"#E3E5E880",
         backgroundColor: theme.palette.mode === 'light' ? "#F5F6F7" : "#202124",
         // marginTop: 0,
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
       {/* Create New Project Button */}
@@ -79,98 +81,85 @@ const Sidebar = ({
           Projects
         </Typography>
       </Box>
-
-      <List 
-      // sx={{ px: 1 }}
-      sx={{margin:0 , padding:0}}
-      >
-        {projects && projects.length > 0  ? ( 
-          
-        projects.map((project) => (
-        <ListItem
-          key={project.id}
-          button
-          onClick={() => onProjectSelect(project)}
-          sx={{
-            borderRadius: "6px",
-            py: 0.4,
-            px: 0.5,
-            mb: 0.2,
-            display: "flex",
-            alignItems: "center",
-            backgroundColor:
-              selectedProject?.id === project.id
-                ? (theme.palette.mode === "dark" ? "#1b1c1f" : "#E3E5E8")
-                : "transparent",
-            "&:hover": {
-              backgroundColor: selectedProject?.id === project.id
-                ? (theme.palette.mode === "dark" ? "#17181b" : "#DADDE1")
-                : (theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "#E3E5E8"),
-            },
-            transition: "all 0.2s ease",
-            cursor: "pointer",
-          }}
+      <Box sx={{ flex: 1, overflowY: 'auto', px: 2, pb: 2 }}>
+        <List 
+          sx={{ margin: 0, padding: 0 }}
         >
-          <ListItemIcon
-            sx={{
-              minWidth: 28,
-              color: theme.palette.mode === "dark" ? "white" : "#5f6368",
-              mt: "1px",
-            }}
-          >
-            <FolderOutlinedIcon fontSize="small" />
-          </ListItemIcon>
+          {projects && projects.length > 0  ? ( 
+            projects.map((project) => (
+              <ListItem
+                key={project.id}
+                button
+                onClick={() => onProjectSelect(project)}
+                sx={{
+                  borderRadius: "6px",
+                  py: 0.4,
+                  px: 0.5,
+                  mb: 0.2,
+                  display: "flex",
+                  alignItems: "center",
+                  backgroundColor:
+                    selectedProject?.id === project.id
+                      ? (theme.palette.mode === "dark" ? "#1b1c1f" : "#E3E5E8")
+                      : "transparent",
+                  "&:hover": {
+                    backgroundColor: selectedProject?.id === project.id
+                      ? (theme.palette.mode === "dark" ? "#17181b" : "#DADDE1")
+                      : (theme.palette.mode === "dark" ? "rgba(255,255,255,0.04)" : "#E3E5E8"),
+                  },
+                  transition: "all 0.2s ease",
+                  cursor: "pointer",
+                }}
+              >
+                <ListItemIcon
+                  sx={{
+                    minWidth: 28,
+                    color: theme.palette.mode === "dark" ? "white" : "#5f6368",
+                    mt: "1px",
+                  }}
+                >
+                  <FolderOutlinedIcon fontSize="small" />
+                </ListItemIcon>
 
-          <Box sx={{ flex: 1 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      fontWeight: 500,
+                      color:theme.palette.mode === "dark" ? "white" : "#202124",
+                      fontSize: "0.88rem",
+                      lineHeight: 1.2,
+                    }}
+                  >
+                    {project.name}
+                  </Typography>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      color: "#5f6368",
+                      fontSize: "0.73rem",
+                    }}
+                  >
+                    {project.documentCount} documents
+                  </Typography>
+                </Box>
+
+                <ListItemIcon sx={{ minWidth: 22 }}>
+                  <ChevronRightIcon fontSize="small" sx={{ color: "#5f6368" }} />
+                </ListItemIcon>
+              </ListItem>
+            ))
+          ) : (
             <Typography
               variant="body2"
-              sx={{
-                fontWeight: 500,
-                // color: "#202124",
-                color:theme.palette.mode === "dark" ? "white" : "#202124",
-                fontSize: "0.88rem",
-                lineHeight: 1.2,
-              }}
+              color="text.secondary"
+              sx={{ textAlign: "center", mt: 2, fontStyle: "italic" }}
             >
-              {project.name}
+              No projects available
             </Typography>
-            <Typography
-              variant="caption"
-              sx={{
-                color: "#5f6368",
-                // color:theme.palette.mode === "dark" ? "white" : "#5f6368",
-                fontSize: "0.73rem",
-              }}
-            >
-              {project.documentCount} documents
-            </Typography>
-          </Box>
-
-          <ListItemIcon sx={{ minWidth: 22 }}>
-            {/* {selectedProject?.id === project.id ? ( */}
-              {/* <ExpandMoreIcon fontSize="small" sx={{ color: "#5f6368" }} /> */}
-            {/* ) : ( */}
-              <ChevronRightIcon fontSize="small" sx={{ color: "#5f6368" }} />
-            {/* )} */}
-          </ListItemIcon>
-        </ListItem>
-
-
-        ))) :
-         (
-          <Typography
-      variant="body2"
-      color="text.secondary"
-      sx={{
-        textAlign: "center",
-        mt: 2,
-        fontStyle: "italic",
-      }}
-    >
-      No projects available
-        </Typography>
-        )}
-      </List>
+          )}
+        </List>
+      </Box>
     </Box>
   );
 

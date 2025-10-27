@@ -156,7 +156,7 @@ const getTheme = (mode) => createTheme({
 
 export const CustomThemeProvider = ({ children }) => {
   const [mode, setMode] = useState(() => {
-    const savedMode = localStorage.getItem('themeMode');
+    const savedMode = sessionStorage.getItem('themeMode');
     return savedMode || 'light';
   });
 
@@ -165,7 +165,7 @@ export const CustomThemeProvider = ({ children }) => {
   const toggleTheme = () => {
     const newMode = mode === 'light' ? 'dark' : 'light';
     setMode(newMode);
-    localStorage.setItem('themeMode', newMode);
+    sessionStorage.setItem('themeMode', newMode);
   };
 
   const value = {

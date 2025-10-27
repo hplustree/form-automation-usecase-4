@@ -117,7 +117,7 @@ export const updateDocumentResult = async (projectId, docId, fieldName, value) =
 
 
 export const getProjectIdByName = (projectName) => {
-    const projectsMap = JSON.parse(localStorage.getItem("projects_map")) || {};
+    const projectsMap = JSON.parse(sessionStorage.getItem("projects_map")) || {};
     return projectsMap[projectName] || null;
   };
   
@@ -137,6 +137,19 @@ export const updateFieldResult = async (documentId, fieldName, updates) => {
     return response.data;
   } catch (error) {
     console.error("Error updating field result:", error);
+    throw error;
+  }
+};
+
+// Fetch list of projects with pagination
+export const getProjects = async (skip = 0, limit = 100) => {
+  try {
+    const response = await axios.get(`${API_URL}/project`, {
+      params: { skip, limit },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error fetching projects:", error);
     throw error;
   }
 };
