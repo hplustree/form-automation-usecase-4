@@ -19,6 +19,14 @@ const ResultsDisplay = ({ projectId, uploadedDocsCount }) => {
   const [data, setData] = useState([]);
   const [columns, setColumns] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 10 });
+
+  const buildRedirectUrl = (page) => {
+    const base = import.meta.env.VITE_RESULTS_PAGE_BASE_URL || "";
+    if (!base) return "";
+    const pageNumber = Number(page) + 1;
+    return `${base}${pageNumber}`;
+  };
 
   const fetchResults = async () => {
     try {
@@ -127,7 +135,14 @@ const ResultsDisplay = ({ projectId, uploadedDocsCount }) => {
           <DataGrid
             rows={data}
             columns={columns}
-            pageSize={10}
+            paginationModel={paginationModel}
+            onPaginationModelChange={(model) => {
+              setPaginationModel(model);
+              const url = buildRedirectUrl(model.page);
+              if (url) {
+                window.location.assign(url);
+              }
+            }}
             rowsPerPageOptions={[5, 10, 20]}
             disableSelectionOnClick
             checkboxSelection

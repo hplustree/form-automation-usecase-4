@@ -152,6 +152,20 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [editedValues, setEditedValues] = useState({}); // { rowKey: { fieldName: value } }
 
+  const buildRedirectUrl = (page) => {
+    const base = import.meta.env.VITE_RESULTS_PAGE_BASE_URL || "";
+    if (!base) return "";
+    const pageNumber = Number(page);
+    return `${base}${pageNumber}`;
+  };
+
+  const handlePageClick = (page) => {
+    const url = buildRedirectUrl(page);
+    if (url) {
+      window.location.assign(url);
+    }
+  };
+
   const handleTabChange = (event, newValue) => {
     setTabValue(newValue);
   };
@@ -360,6 +374,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     setTabValue(0);
     fetchExtractionResults();
   };
+
+  // Compute dynamic label for Processing tab
+  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => d.status === 'completed');
+  const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
 
   const startGlobalEdit = () => {
     setIsEditing(true);
@@ -767,7 +785,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           }}
         >
           <Tab label="Results" />
-          <Tab label="Processing" />
+          <Tab label={processingTabLabel} />
         </Tabs>
       </Box>
 
@@ -988,25 +1006,51 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                               disabled={savingEdit}
                             />
                           ) : (
-                            <Tooltip title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))} arrow>
-                              <Typography
-                                variant='body2'
-                                sx={{
-                                  fontStyle: getFieldValue(doc, header) === 'NULL' ? 'italic' : 'normal',
-                                  color: getFieldValue(doc, header) === 'NULL' ? 'text.secondary' : 'text.primary',
-                                  display: 'block',
-                                  maxWidth: '30ch',
-                                  whiteSpace: 'normal',
-                                  overflowWrap: 'anywhere',
-                                  wordBreak: 'break-word',
-                                  maxHeight: '12rem',
-                                  overflowY: 'auto',
-                                }}
-                                title={(getSourcePages(doc, header).length ? `Pages: ${getSourcePages(doc, header).join(', ')}` : String(getFieldValue(doc, header)))}
-                              >
-                                {getFieldValue(doc, header)}
-                              </Typography>
-                            </Tooltip>
+                              <Box>
+                                <Typography
+                                  variant='body2'
+                                  sx={{
+                                    fontStyle: getFieldValue(doc, header) === 'NULL' ? 'italic' : 'normal',
+                                    color: getFieldValue(doc, header) === 'NULL' ? 'text.secondary' : 'text.primary',
+                                    display: 'block',
+                                    maxWidth: '30ch',
+                                    whiteSpace: 'normal',
+                                    overflowWrap: 'anywhere',
+                                    wordBreak: 'break-word',
+                                    maxHeight: '12rem',
+                                    overflowY: 'auto',
+                                  }}
+                                >
+                                  {getFieldValue(doc, header)}
+                                </Typography>
+                                {getSourcePages(doc, header).length > 0 && (
+                                  <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 0.5, rowGap: 0.5 }}>
+                                    <Typography variant='caption' sx={{ mr: 0.5, color: 'text.secondary' }}>Pages:</Typography>
+                                    {getSourcePages(doc, header).map((p) => (
+                                      <Button key={p} size='small' variant='text' onClick={() => handlePageClick(p)} sx={{ minWidth: 0, px: 1 }}>
+                                        {p}
+                                      </Button>
+                                    ))}
+                                  </Box>
+                                )}
+                                {doc?.results?.[header]?.explanation && (
+                                  <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center', flexWrap: 'wrap', columnGap: 0.5, rowGap: 0.5 }}>
+                                    <Typography variant='caption' sx={{ mr: 0.5, color: 'text.secondary' }}>Explanation:</Typography>
+                                    <Tooltip
+                                      arrow
+                                      title={
+                                        <Box sx={{ maxWidth: 480, maxHeight: 300, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                                          {String(doc.results[header].explanation)}
+                                        </Box>
+                                      }
+                                    >
+                                      <IconButton size='small' sx={{ p: 0.25 }}>
+                                        <VisibilityOutlinedIcon fontSize='inherit' />
+                                      </IconButton>
+                                    </Tooltip>
+                                  </Box>
+                                )}
+                              </Box>
                           )}
                         </TableCell>
                       ))}
