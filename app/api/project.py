@@ -1,29 +1,24 @@
 import os
-import uuid
 import json
 import hashlib
 import shutil
+import uuid
 from pathlib import Path
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Depends, Body, Path as PathParam
-from pydantic import BaseModel, Field, validator
+from typing import List, Optional, Dict, Any, Union
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Path as FastAPIPath, Query, Body
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import redis as rqredis
-from rq import Queue
+from rq import Queue, get_current_job
 from datetime import datetime
 import logging
+from fastapi import status
 from sqlalchemy.orm import Session
-from sqlalchemy import text
+from sqlalchemy import text, and_
 from app.logging_config import logger
 from app.db.database import get_db
-from app.db.operations import (
-    ProjectOperations,
-    DocumentOperations,
-    FieldResultOperations,
-    QueueOperations,
-    DocumentQueueOperations,
-    FieldQueueOperations
-)
-from app.db.models import Project, Document
+from app.db.operations import ProjectOperations, DocumentOperations, FieldResultOperations, QueueOperations, DocumentQueueOperations, FieldQueueOperations
+from app.api.worker_parallel import process_document
+from app.db.models import Project, Document, DocumentQueue, FieldQueue, FieldResult
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "projects")
@@ -31,6 +26,8 @@ REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 86400 * 7))  # 7 days for
 
 sync_redis = rqredis.from_url(REDIS_URL)
 project_queue = Queue(QUEUE_NAME, connection=sync_redis)
+document_queue = Queue("documents", connection=sync_redis)
+field_queue = Queue("fields", connection=sync_redis)
 
 # Create the router
 project_router = APIRouter()
@@ -476,7 +473,8 @@ class FieldConfig(BaseModel):
     mode: str = Field(default="low", description="Reasoning effort mode")
     type: str = Field(default="verbatim", description="Prompt type: verbatim or summarize")
     
-    @validator('model', pre=True)
+    @field_validator('model', mode='before')
+    @classmethod
     def validate_model(cls, v):
         if not v:
             logger.warning("Model not specified, using default 'gpt-5'")
@@ -510,16 +508,18 @@ class FieldConfig(BaseModel):
             logger.warning(f"Falling back to default model 'gpt-5'")
             return "gpt-5"
     
-    @validator('mode')
-    def validate_mode(cls, v):
+    @field_validator('mode')
+    @classmethod
+    def validate_mode(cls, v: str) -> str:
         valid_modes = {"low", "medium", "high"}
         if v.lower() not in valid_modes:
             logging.warning(f"Mode '{v}' not valid, using default 'low'")
             return "low"
         return v.lower()
     
-    @validator('type')
-    def validate_type(cls, v):
+    @field_validator('type')
+    @classmethod
+    def validate_type(cls, v: str) -> str:
         valid_types = {"verbatim", "summarize"}
         if v.lower() not in valid_types:
             logging.warning(f"Type '{v}' not valid, using default 'verbatim'")
@@ -698,9 +698,14 @@ async def submit_project(
             for doc in documents
         ]
         
-        # Create project in database
+        # Create project in database with requested fields in metadata
+        project_metadata = {
+            "requested_fields": requested_fields,
+            "template_name": template_name
+        }
+        
         db_project = ProjectOperations.create_project(
-            db,
+            db=db,
             project_name=project_name,
             fields_config=fields_config,
             documents=pg_documents
@@ -947,6 +952,191 @@ async def delete_project(project_id: str, db: Session = Depends(get_db)):
 
 
 # Add this new endpoint after the delete_project endpoint
+
+@project_router.post("/{project_id}/documents", response_model=Dict[str, Any])
+async def add_documents_to_project(
+    project_id: str = FastAPIPath(..., description="ID of the project"),
+    files: List[UploadFile] = File(...),
+    field_names: str = Form("[]"),  # JSON array string of field names
+    template_name: str = Form("spa_fields"),
+    db: Session = Depends(get_db)
+):
+    """
+    Add new documents to an existing project.
+    """
+    try:
+        # Get project
+        project = ProjectOperations.get_project(db, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+        
+        # Parse field names from JSON string
+        try:
+            fields_to_extract = json.loads(field_names)
+            if not isinstance(fields_to_extract, list):
+                raise ValueError("field_names must be a JSON array")
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid field_names format. Must be a JSON array")
+        
+        # Process each file
+        results = []
+        for file in files:
+            try:
+                # Use the existing temp_files directory
+                upload_dir = "/app/temp_files"
+                os.makedirs(upload_dir, exist_ok=True)
+                
+                # Save the file to the temp_files directory with a unique name
+                file_ext = os.path.splitext(file.filename)[1]
+                unique_filename = f"{uuid.uuid4()}{file_ext}"
+                file_path = os.path.join(upload_dir, unique_filename)
+                logger.info(f"Saving uploaded file to: {file_path}")
+                with open(file_path, "wb") as f:
+                    f.write(await file.read())
+                
+                # Create document record
+                document = Document(
+                    project_id=project_id,
+                    doc_name=file.filename,
+                    file_path=file_path,
+                    status="pending"
+                )
+                db.add(document)
+                db.commit()
+                db.refresh(document)
+                
+                # Enqueue for processing with field names in metadata
+                # Enqueue for processing with field names in metadata
+                job = document_queue.enqueue(
+                    process_document,
+                    args=(project_id, document.id),  # Correct order: (project_id, document_id)
+                    kwargs={
+                        'field_names': fields_to_extract,  # Pass the field names to filter
+                        'is_regeneration': False
+                    },
+                    job_id=f"doc_{document.id}_{int(datetime.utcnow().timestamp())}",
+                    result_ttl=REDIS_TTL_SECONDS,
+                    failure_ttl=REDIS_TTL_SECONDS,
+                    timeout="30m"
+                )
+                
+                results.append({
+                    "filename": file.filename,
+                    "document_id": document.id,
+                    "status": "queued",
+                    "job_id": job.id
+                })
+                
+            except Exception as e:
+                logger.error(f"Error processing {file.filename}: {str(e)}")
+                results.append({
+                    "filename": file.filename,
+                    "error": str(e),
+                    "status": "failed"
+                })
+        
+        return {
+            "project_id": project_id,
+            "template_name": template_name,
+            "documents_added": len([r for r in results if r.get("status") == "queued"]),
+            "documents_failed": len([r for r in results if r.get("status") == "failed"]),
+            "results": results
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error adding documents to project: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to add documents: {str(e)}")
+
+
+@project_router.post("/{project_id}/documents/{document_id}/regenerate", response_model=Dict[str, Any])
+async def regenerate_document(
+    project_id: str = FastAPIPath(..., description="ID of the project"),
+    document_id: str = FastAPIPath(..., description="ID of the document to regenerate"),
+    field_names: str = Query("", description="Comma-separated list of field names to regenerate (leave empty for all fields)"),
+    db: Session = Depends(get_db)
+):
+    """
+    Regenerate a specific document in a project.
+    This will clear existing field extractions and reprocess the document.
+    If field_names is provided, only those fields will be regenerated.
+    """
+    # Get the project and document
+    project = ProjectOperations.get_project(db, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+    
+    document = db.query(Document).filter(
+        Document.id == document_id,
+        Document.project_id == project_id
+    ).first()
+    
+    if not document:
+        raise HTTPException(status_code=404, detail=f"Document {document_id} not found in project {project_id}")
+    
+    # Parse field names if provided
+    fields_to_regenerate = []
+    if field_names:
+        fields_to_regenerate = [f.strip() for f in field_names.split(",") if f.strip()]
+    
+    # Clear existing field results (filtered if field names provided)
+    field_result_query = db.query(FieldResult).filter(FieldResult.document_id == document_id)
+    if fields_to_regenerate:
+        field_result_query = field_result_query.filter(FieldResult.field_name.in_(fields_to_regenerate))
+    field_result_query.delete()
+    
+    # Clear any existing queue entries for this document
+    db.query(DocumentQueue).filter(DocumentQueue.document_id == document_id).delete()
+    
+    field_queue_query = db.query(FieldQueue).filter(FieldQueue.document_id == document_id)
+    if fields_to_regenerate:
+        field_queue_query = field_queue_query.filter(FieldQueue.field_name.in_(fields_to_regenerate))
+    field_queue_query.delete()
+    
+    # Reset document status
+    document.status = "pending"
+    document.completed_at = None
+    document.error_message = None
+    document.processing_time = None
+    db.commit()
+    
+    try:
+        # Prepare job arguments
+        job_kwargs = {
+            "document_id": document_id,
+            "project_id": project_id,
+            "is_regeneration": True,
+            "job_id": f"doc_{document_id}_{int(datetime.utcnow().timestamp())}",
+            "result_ttl": REDIS_TTL_SECONDS,
+            "failure_ttl": REDIS_TTL_SECONDS,
+            "timeout": "30m"
+        }
+        
+        # Add field_names to job kwargs if specified
+        if fields_to_regenerate:
+            job_kwargs["field_names"] = fields_to_regenerate
+        
+        # Enqueue for reprocessing
+        job = document_queue.enqueue(process_document, **job_kwargs)
+        
+        return {
+            "status": "queued",
+            "message": f"Document {document_id} has been queued for reprocessing",
+            "job_id": job.id,
+            "document_id": document_id,
+            "project_id": project_id,
+            "fields_to_regenerate": fields_to_regenerate if fields_to_regenerate else "all"
+        }
+    except Exception as e:
+        document.status = "failed"
+        document.error_message = str(e)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to queue document for reprocessing: {str(e)}"
+        )
+
 
 @project_router.get("", response_model=List[ProjectStatusResponse], summary="List all projects")
 async def list_all_projects(

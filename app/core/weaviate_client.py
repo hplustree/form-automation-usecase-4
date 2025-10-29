@@ -11,6 +11,7 @@ DOC_TTL_DAYS = int(os.getenv("DOC_TTL_DAYS", 180))
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 86400))
 
+
 sync_redis = rqredis.from_url(REDIS_URL)
 
 class WeaviateClient:
@@ -21,18 +22,62 @@ class WeaviateClient:
         self.class_name = "DataPipeline"
         self._connect()
         self._create_class_if_not_exists()
+        
+    def get_chunk_count(self, project_id: str, document_id: str) -> int:
+        """
+        Get the number of chunks for a specific document in a project.
+        
+        Args:
+            project_id: ID of the project
+            document_id: ID of the document
+            
+        Returns:
+            int: Number of chunks for the document
+        """
+        if not self.client:
+            raise ConnectionError("Weaviate client not initialized")
+            
+        try:
+            result = self.client.query.aggregate(self.class_name).with_where({
+                "operator": "And",
+                "operands": [
+                    {
+                        "path": ["project_id"],
+                        "operator": "Equal",
+                        "valueString": project_id
+                    },
+                    {
+                        "path": ["doc_id"],
+                        "operator": "Equal",
+                        "valueString": document_id
+                    }
+                ]
+            }).with_meta_count().do()
+            
+            if "data" in result and "Aggregate" in result["data"]:
+                return result["data"]["Aggregate"][self.class_name][0]["meta"]["count"]
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Error getting chunk count: {str(e)}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Failed to store chunks in Weaviate: {str(e)}")
+            raise
 
     def _connect(self):
         try:
             self.client = weaviate.Client(self.url, startup_period=60)
             if not self.client.is_ready():
                 raise ConnectionError("Weaviate client not ready")
-            logger.info(f"Connected to Weaviate at {self.url}")
         except Exception as e:
             logger.error(f"Failed to connect to Weaviate: {str(e)}")
             raise
 
     def _create_class_if_not_exists(self):
+        """Create the Weaviate class if it doesn't exist"""
+        # Log current schema for debugging
         try:
             existing_classes = self.client.schema.get().get("classes", [])
             if not any(cls["class"] == self.class_name for cls in existing_classes):
@@ -135,6 +180,32 @@ class WeaviateClient:
         except Exception as e:
             logger.error(f"Failed to insert chunks: {str(e)}")
             raise
+
+    def has_existing_chunks(self, project_id: str, doc_id: str) -> bool:
+        """Check if a document has existing chunks in Weaviate"""
+        try:
+            response = self.client.query.aggregate(self.class_name).with_meta_count().with_where({
+                "operator": "And",
+                "operands": [
+                    {
+                        "path": ["project_id"],
+                        "operator": "Equal",
+                        "valueText": project_id
+                    },
+                    {
+                        "path": ["doc_id"],
+                        "operator": "Equal",
+                        "valueText": doc_id
+                    }
+                ]
+            }).do()
+            
+            count = response.get("data", {}).get("Aggregate", {}).get(self.class_name, [{}])[0].get("meta", {}).get("count", 0)
+            return count > 0
+            
+        except Exception as e:
+            logger.error(f"Error checking for existing chunks: {str(e)}")
+            return False
 
     def search_similar(
         self,

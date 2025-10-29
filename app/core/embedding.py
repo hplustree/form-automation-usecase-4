@@ -687,6 +687,7 @@ class EmbeddingService:
         text_chunks = text_splitter.split_text(block_text)
         logger.info(f"Split block for pages {block_page_numbers} into {len(text_chunks)} chunks")
         current_page_num = page_data['page_number']
+        logger.info(f"Processing page number from page_data: {current_page_num} (type: {type(current_page_num)})")
         page_chunks = []
         for chunk_idx, chunk_text in enumerate(text_chunks):
             if len(chunk_text) < self.min_chunk_size:
@@ -698,6 +699,7 @@ class EmbeddingService:
                 continue
             contains_image_summary = "[Image Summary]" in chunk_text
             content_type = "text_with_image_summary" if contains_image_summary else "text"
+            # Ensure page number is an integer and at least 1 (1-based page numbering)
             page_numbers = [current_page_num]
             original_texts = {
                 current_page_num: original_page_text_map.get(current_page_num, "")

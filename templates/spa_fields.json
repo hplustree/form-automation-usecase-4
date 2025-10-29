@@ -11,7 +11,7 @@
       "label": "Target",
       "type": "llm",
       "prompt": "What is the name of the company which the buyer is seeking to acquire? Respond with the company name and legal entity which the buyer is seeking to acquire. ",
-      "typeOfPrompt": "verbatim",
+      "typeOfPrompt": "summarize",
       "model": "gpt-5-mini",
       "mode": "medium",
       "isActive": true,
@@ -30,7 +30,7 @@
     },
     {
       "code": "sign_split",
-      "label": "[Simultaneous / split] sign and close?",
+      "label": "sign split",
       "type": "llm",
       "prompt": "complete the folmediuming sentence by selecting the appropriate option: 'the transaction involves a [simultaneous / split] sign and close.'",
       "typeOfPrompt": "summarize",
@@ -63,7 +63,7 @@
     },
     {
       "code": "definition_of_loss",
-      "label": "Folmedium the definition of Loss as set out in clause [...] of the SPA.",
+      "label": "definition of loss",
       "type": "llm",
       "prompt": "Inject the clause number (and the relevant schedule of the SPA, if applicable) of the definition of Loss from the SPA and complete the folmediuming: \"Folmedium the definition of Loss as set out in clause [...] of the SPA.\" If its not defined, respond with \"[Note to HWF: Loss is not defined in the SPA. Please review the SPA to confirm.]\"",
       "typeOfPrompt": "summarize",
@@ -74,7 +74,7 @@
     },
     {
       "code": "indirect_damages",
-      "label": "Include synthetic cover for reasonably foreseeable:\n(i)\tindirect and consequential damages;\n(ii)\tloss of profit.",
+      "label": "indirect damages",
       "type": "llm",
       "prompt": "If the liability of the Seller / Warrantor for (i) indirect and/or consequential damages; and/or (ii) loss of profit is not expressly limited in the SPA / MWD, then  please add the folmediuming note: „[Note to HWF: Propose to delete this row as the such loss / damages do not appear to be expressly excluded]“.",
       "typeOfPrompt": "summarize",

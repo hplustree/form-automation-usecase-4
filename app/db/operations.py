@@ -147,6 +147,14 @@ class DocumentOperations:
         """Get document by ID."""
         return db.query(Document).filter(Document.id == doc_id).first()
     
+    staticmethod
+    def get_document_by_ids(db: Session, document_id: str, project_id: str) -> Optional[Document]:
+        """Get document by both document ID and project ID for validation."""
+        return db.query(Document).filter(
+            Document.id == document_id,
+            Document.project_id == project_id
+        ).first()
+    
     @staticmethod
     def get_project_documents(db: Session, project_id: str) -> List[Document]:
         """Get all documents for a project."""

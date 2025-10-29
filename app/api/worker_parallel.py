@@ -97,132 +97,352 @@ def init_services(model: str = None, reasoning_effort: str = None):
     }
 
 
-def process_document(document_id: str, project_id: str):
+def process_document(
+    project_id: str,
+    document_id: str,
+    is_regeneration: bool = False,
+    field_names: list = None,
+    **kwargs
+):
     """
-    Worker function to process a single document.
-    This function:
-    1. Loads the document
-    2. Creates chunks and embeddings
-    3. Stores chunks in Weaviate
-    4. Enqueues field extraction tasks
-    """
-    worker_id = str(uuid.uuid4())
-    logger.info(f"[Worker {worker_id}] Starting document processing for {document_id}")
+    Process a document by extracting text, splitting into chunks, generating embeddings, and storing in Weaviate.
     
+    Args:
+        project_id: The ID of the project
+        document_id: The ID of the document to process
+        is_regeneration: Whether this is a regeneration of an existing document
+        field_names: Optional list of field names to process (if None, all fields will be processed)
+        **kwargs: Additional arguments (e.g., timeout from RQ)
+    """
+    import time
+    import psutil
+    from datetime import datetime
+    
+    # Initialize timing and process tracking
+    start_time = time.time()
+    process = psutil.Process()
+    worker_id = str(uuid.uuid4())[:8]  # Shorter worker ID for logs
     db = SessionLocal()
     try:
-        # Get document from database
+        # Get document from database - ensure we're using the correct ID fields
+        logger.info(f"[Worker {worker_id}] Fetching document {document_id} from project {project_id}")
         document = DocumentOperations.get_document(db, document_id)
         if not document:
-            logger.error(f"Document {document_id} not found")
+            error_msg = f"Document {document_id} not found in project {project_id}"
+            logger.error(f"[Worker {worker_id}] {error_msg}")
+            # Try to update document status if possible
+            try:
+                DocumentOperations.update_document_status(
+                    db, document_id, "failed",
+                    error_message=error_msg
+                )
+                db.commit()
+            except Exception as e:
+                logger.error(f"[Worker {worker_id}] Failed to update document status: {str(e)}")
             return
+            
+        logger.info(f"[Worker {worker_id}] Found document: {document.doc_name}")
+        
+        # Get project for field configurations
+        project = ProjectOperations.get_project(db, project_id)
         
         # Get project for field configurations
         project = ProjectOperations.get_project(db, project_id)
         if not project:
-            logger.error(f"Project {project_id} not found")
+            error_msg = f"Project {project_id} not found in database"
+            logger.error(f"[Worker {worker_id}] {error_msg}")
+            DocumentOperations.update_document_status(
+                db, document_id, "failed",
+                error_message=error_msg
+            )
+            db.commit()
             return
         
         # Update document status
         DocumentOperations.update_document_status(db, document_id, "processing")
-        
+
         # Initialize services
         services = init_services()
         embedding_service = services["embedding_service"]
         weaviate_client = services["weaviate_client"]
         
         try:
-            # Read file content
-            with open(document.file_path, 'rb') as f:
-                file_content = f.read()
-            
-            # Process document and create chunks
-            logger.info(f"Creating chunks for document {document.doc_name}")
-            chunks = embedding_service.process_document_from_content(
-                file_content, 
-                document.doc_name
-            )
-            
-            if not chunks:
-                logger.warning(f"No chunks extracted from {document.doc_name}")
-                DocumentOperations.update_document_status(
-                    db, document_id, "failed",
-                    error_message="No chunks extracted from document"
-                )
-                DocumentQueueOperations.complete_document(
-                    db, document_id, "failed",
-                    error_message="No chunks extracted"
-                )
-                return
-            
-            # Generate embeddings
-            chunk_texts = [chunk["text"] for chunk in chunks]
-            logger.info(f"Generating embeddings for {len(chunks)} chunks")
-            embeddings = retry_api_call(
-                embedding_service.generate_embeddings, 
-                chunk_texts
-            )
-            
-            # Insert into Weaviate
-            logger.info(f"Inserting {len(chunks)} chunks into Weaviate")
-            retry_api_call(
-                weaviate_client.insert_chunks,
-                project_id,
-                document_id,
-                document.doc_name,
-                chunks,
-                embeddings
-            )
-            
-            # Update document with chunk count and mark as chunks_ready (not completed yet)
-            DocumentOperations.update_document_status(
-                db, document_id, "processing",
-                chunks_count=len(chunks),
-                page_count=max([c.get("page_number", 0) for c in chunks]) if chunks else 0
-            )
-            
-            # Mark document as completed in queue (for chunk processing)
-            DocumentQueueOperations.complete_document(db, document_id, "completed")
-            
-            # Enqueue field extraction tasks for this document
-            fields_config = project.fields_config
-            for field_config in fields_config:
-                FieldQueueOperations.enqueue_field(
-                    db,
-                    document_id=document_id,
-                    project_id=project_id,
-                    field_name=field_config["field_name"],
-                    field_config=field_config,
-                    priority=0,
-                    depends_on_doc=True
+            if is_regeneration:
+                # For regeneration, skip chunk creation and embedding generation
+                logger.info(f"[Worker {worker_id}] Regeneration mode: Skipping chunk creation and embedding generation")
+                logger.info(f"[Worker {worker_id}] Verifying document file exists: {document.file_path}")
+                
+                # Verify the document exists
+                if not os.path.exists(document.file_path):
+                    error_msg = f"Document file not found at path: {document.file_path}"
+                    logger.error(error_msg)
+                    DocumentOperations.update_document_status(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    DocumentQueueOperations.complete_document(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    return
+                
+                # Check if document has existing chunks in Weaviate
+                logger.info(f"[Worker {worker_id}] Checking for existing chunks in Weaviate...")
+                has_chunks = weaviate_client.has_existing_chunks(project_id, document_id)
+                logger.info(f"[Worker {worker_id}] Existing chunks found: {has_chunks}")
+                
+                if not has_chunks:
+                    error_msg = "No existing chunks found for regeneration"
+                    logger.error(f"[Worker {worker_id}] {error_msg}")
+                    logger.error(f"[Worker {worker_id}] Cannot regenerate fields without existing chunks")
+                    DocumentOperations.update_document_status(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    DocumentQueueOperations.complete_document(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    return
+                
+                logger.info(f"[Worker {worker_id}] Document has existing chunks, proceeding with field regeneration")
+                # Get chunk count for logging
+                chunk_count = weaviate_client.get_chunk_count(project_id, document_id)
+                logger.info(f"[Worker {worker_id}] Found {chunk_count} existing chunks for this document")
+                
+            else:
+                # Original processing for new documents
+                # Get the file path from the document
+                file_path = document.file_path
+                logger.info(f"Processing new document at path: {file_path}")
+                
+                # Check if file exists
+                if not os.path.exists(file_path):
+                    error_msg = f"File not found at path: {file_path}"
+                    logger.error(f"Current working directory: {os.getcwd()}")
+                    
+                    # Log the contents of the temp_files directory for debugging
+                    temp_files_dir = "/app/temp_files"
+                    if os.path.exists(temp_files_dir):
+                        logger.error(f"Contents of {temp_files_dir}: {os.listdir(temp_files_dir)}")
+                    else:
+                        logger.error(f"Directory not found: {temp_files_dir}")
+                    logger.error(error_msg)
+                    DocumentOperations.update_document_status(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    DocumentQueueOperations.complete_document(
+                        db, document_id, "failed",
+                        error_message=error_msg
+                    )
+                    return
+                    
+                # Read file content
+                with open(document.file_path, 'rb') as f:
+                    file_content = f.read()
+                
+                # Process document and create chunks
+                logger.info(f"Creating chunks for new document {document.doc_name}")
+                chunks = embedding_service.process_document_from_content(
+                    file_content, 
+                    document.doc_name
                 )
                 
-                # Also enqueue in RQ for processing
-                field_queue.enqueue(
-                    'app.api.worker_parallel.process_field',
-                    args=(
-                        document_id,
-                        project_id,
-                        field_config["field_name"],
-                        field_config
-                    ),
-                    job_timeout=600,  # 10 minutes per field
-                    result_ttl=REDIS_TTL_SECONDS
+                if not chunks:
+                    logger.warning(f"No chunks extracted from {document.doc_name}")
+                    DocumentOperations.update_document_status(
+                        db, document_id, "failed",
+                        error_message="No chunks extracted from document"
+                    )
+                    DocumentQueueOperations.complete_document(
+                        db, document_id, "failed",
+                        error_message="No chunks extracted"
+                    )
+                    return
+                
+                # Generate embeddings
+                chunk_texts = [chunk["text"] for chunk in chunks]
+                logger.info(f"Generating embeddings for {len(chunks)} chunks")
+                embeddings = retry_api_call(
+                    embedding_service.generate_embeddings, 
+                    chunk_texts
                 )
+                
+                # Store chunks in Weaviate
+                logger.info(f"[Worker {worker_id}] Storing {len(chunks)} chunks in Weaviate")
+                try:
+                    stored_count = weaviate_client.insert_chunks(
+                        project_id=project_id,
+                        doc_id=document_id,
+                        doc_name=document.doc_name,
+                        chunks=chunks,
+                        embeddings=embeddings
+                    )
+                    logger.info(f"[Worker {worker_id}] Successfully stored {stored_count} chunks in Weaviate")
+                except Exception as e:
+                    error_msg = f"Failed to store chunks in Weaviate: {str(e)}"
+                    logger.error(f"[Worker {worker_id}] {error_msg}", exc_info=True)
+                    raise RuntimeError(error_msg) from e
+                
+                # Update document with chunk count and page count
+                # Get the maximum page number from all chunks
+                max_page_number = 0
+                for chunk in chunks:
+                    # Handle both 'page_numbers' (list) and 'page_number' (int) for backward compatibility
+                    page_numbers = chunk.get("page_numbers")
+                    if isinstance(page_numbers, list) and page_numbers:
+                        max_page_number = max(max_page_number, max(page_numbers))
+                    else:
+                        # Fallback to single page_number if page_numbers is not available
+                        page_number = chunk.get("page_number", 0)
+                        max_page_number = max(max_page_number, page_number)
+                
+                DocumentOperations.update_document_status(
+                    db,
+                    document_id,
+                    status="chunks_ready",
+                    chunks_count=len(chunks),
+                    page_count=max_page_number if chunks else 0
+                )
+                if is_regeneration:
+                    logger.info(f"Successfully prepared document {document.doc_name} for regeneration")
+                else:
+                    logger.info(f"Successfully processed document {document.doc_name} with {len(chunks)} chunks")
             
-            logger.info(f"Successfully processed document {document.doc_name} with {len(chunks)} chunks")
-            logger.info(f"Enqueued {len(fields_config)} field extraction tasks")
+            # Mark document as chunks_ready in queue (for chunk processing)
+            DocumentQueueOperations.complete_document(db, document_id, "chunks_ready")
+            
+            # Enqueue field extraction tasks for this document
+            # Get the requested field names from either the function parameter or project metadata
+            requested_fields = field_names or []
+            if not requested_fields and project.metadata and 'requested_fields' in project.metadata:
+                requested_fields = project.metadata.get('requested_fields', [])
+            
+            # Get the fields configuration from the project
+            fields_config = project.fields_config or []
+            
+            # If no specific fields are requested, process all fields
+            if not requested_fields:
+                logger.info(f"No field filtering applied, processing all {len(fields_config)} fields")
+            else:
+                # Filter to only include requested fields that exist in the config
+                fields_config = [
+                    field for field in fields_config 
+                    if field and field.get('field_name') in requested_fields
+                ]
+                logger.info(f"Filtered to {len(fields_config)} requested fields out of {len(project.fields_config)} total fields")
+            
+            if not fields_config:
+                warning_msg = f"No valid fields found to process for document {document_id}"
+                logger.warning(f"[Worker {worker_id}] {warning_msg}")
+                
+                # Log available fields for debugging
+                if project.fields_config:
+                    available_fields = [f.get('field_name', 'unnamed') for f in project.fields_config if f and f.get('field_name')]
+                    logger.warning(f"[Worker {worker_id}] Available fields in project: {', '.join(available_fields)}")
+                
+                # Mark document as completed since there are no fields to process
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed",
+                    error_message=warning_msg
+                )
+                DocumentQueueOperations.complete_document(
+                    db, document_id, "completed",
+                    error_message=warning_msg
+                )
+                logger.warning(f"[Worker {worker_id}] Document marked as completed with warning: {warning_msg}")
+                return
+            
+            # Process each field
+            for field_config in fields_config:
+                if not field_config or not field_config.get('field_name'):
+                    logger.warning(f"Skipping invalid field config: {field_config}")
+                    continue
+                    
+                field_name = field_config["field_name"]
+                field_type = field_config.get('type', 'unknown')
+                field_model = field_config.get('model', 'default')
+                logger.info(f"[Worker {worker_id}] Enqueuing field extraction for '{field_name}' (Type: {field_type}, Model: {field_model})")
+                
+                # Log field configuration (safely, without sensitive info)
+                safe_config = {k: v for k, v in field_config.items() if k not in ['prompt', 'api_key', 'password']}
+                logger.debug(f"[Worker {worker_id}] Field config: {safe_config}")
+                
+                # Enqueue in database
+                try:
+                    FieldQueueOperations.enqueue_field(
+                        db,
+                        document_id=document_id,
+                        project_id=project_id,
+                        field_name=field_name,
+                        field_config=field_config,
+                        priority=0,
+                        depends_on_doc=True
+                    )
+                    
+                    # Also enqueue in RQ for processing
+                    field_queue.enqueue(
+                        'app.api.worker_parallel.process_field',
+                        args=(
+                            document_id,
+                            project_id,
+                            field_name,
+                            field_config
+                        ),
+                        job_timeout=600,  # 10 minutes per field
+                        result_ttl=REDIS_TTL_SECONDS
+                    )
+                except Exception as e:
+                    logger.error(f"[Worker {worker_id}] Failed to enqueue field '{field_name}': {str(e)}", exc_info=True)
+                    # Log memory usage when field enqueue fails
+                    logger.error(f"[Worker {worker_id}] Memory usage (RSS): {process.memory_info().rss / 1024 / 1024:.2f}MB")
+                    # Continue with other fields even if one fails
+            
+            # Log completion of field enqueuing
+            elapsed_time = time.time() - start_time
+            logger.info(f"[Worker {worker_id}] Successfully enqueued {len(fields_config)} field extraction tasks")
+            logger.info(f"[Worker {worker_id}] Document processing time so far: {elapsed_time:.2f} seconds")
+            logger.info(f"[Worker {worker_id}] Memory usage: {process.memory_info().rss / 1024 / 1024:.2f}MB")
+            
+            # Log next steps
+            logger.info(f"[Worker {worker_id}] Field extraction tasks have been queued and will be processed asynchronously")
+            logger.info(f"[Worker {worker_id}] {'=' * 30} DOCUMENT PROCESSING QUEUED SUCCESSFULLY {'=' * 30}")
+            logger.info("" * 80)  # Visual separator
             
         except Exception as e:
-            logger.error(f"Error processing document {document.doc_name}: {str(e)}")
-            DocumentOperations.update_document_status(
-                db, document_id, "failed",
-                error_message=str(e)
-            )
-            DocumentQueueOperations.complete_document(
-                db, document_id, "failed",
-                error_message=str(e)
-            )
+            # Get elapsed time safely
+            try:
+                elapsed_time = time.time() - start_time
+                mem_usage = f"{process.memory_info().rss / 1024 / 1024:.2f}MB"
+                doc_name = getattr(document, 'doc_name', 'unknown')
+            except Exception as log_err:
+                elapsed_time = -1
+                mem_usage = "unknown"
+                doc_name = 'unknown'
+                logger.error(f"[Worker {worker_id}] Error getting diagnostic info: {str(log_err)}")
+            
+            error_msg = f"Error processing document {doc_name}: {str(e)}"
+            
+            # Try to update document status in database
+            try:
+                if 'db' in locals() and db:
+                    DocumentOperations.update_document_status(
+                        db, document_id, "failed",
+                        error_message=error_msg[:1000]  # Truncate to avoid DB issues
+                    )
+                    DocumentQueueOperations.complete_document(
+                        db, document_id, "failed",
+                        error_message=error_msg[:1000]
+                    )
+                    db.commit()
+                    logger.error(f"[Worker {worker_id}] Document marked as failed in database")
+                else:
+                    logger.error("[Worker {worker_id}] Could not update document status - DB connection not available")
+            except Exception as db_err:
+                logger.error(f"[Worker {worker_id}] Failed to update document status: {str(db_err)}")
+            
+            logger.error("="*80 + "\n")
             raise
             
     finally:
@@ -281,7 +501,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                 doc_id=document_id,
                 query_vector=query_embedding,
                 query_text=prompt,
-                limit=10,
+                limit=20,
                 alpha=0.5
             )
             
@@ -315,7 +535,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     context_chunks,
                     context_pages,
                     project_id,
-                    explanation_needed=False,
+                    explanation_needed=True,
                     prompt_type=prompt_type,
                 )
                 
@@ -343,7 +563,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     user_query=prompt,
                     initial_answer=initial_answer,
                     initial_explanation=initial_explanation,
-                    explanation_needed=False,
+                    explanation_needed=True,
                     prompt_type=prompt_type,
                     chunks=context_chunks,
                     pages=context_pages,
@@ -372,7 +592,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                 else:
                     final_text = ""
                     final_text_html = ""
-                
+
                 result = {
                     "field_name": field_name,
                     "value": final_text,
@@ -606,7 +826,7 @@ def process_project_parallel(project_id: str):
             # Enqueue in RQ for processing
             document_queue.enqueue(
                 'app.api.worker_parallel.process_document',
-                args=(document.id, project_id),
+                args=(project_id, document.id),
                 job_timeout=1800,  # 30 minutes per document
                 result_ttl=REDIS_TTL_SECONDS
             )
