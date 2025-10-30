@@ -42,6 +42,7 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import DownloadIcon from '@mui/icons-material/Download';
+import AutorenewIcon from '@mui/icons-material/Autorenew';
 import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult } from "../api/api";
 import AddDocumentModal from "./AddDocumentModal";
 import AddIcon from '@mui/icons-material/Add';
@@ -202,6 +203,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     content: ''
   });
   const [addDocumentOpen, setAddDocumentOpen] = useState(false);
+  const [regenerating, setRegenerating] = useState({});
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
@@ -214,6 +216,15 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     });
     // Refresh the document list after adding
     getProjectStatus();
+  };
+
+  const handleRegenerate = (doc) => {
+    const key = doc.doc_id || doc.id;
+    setRegenerating(prev => ({ ...prev, [key]: true }));
+    // TODO: Integrate regenerate API call here
+    setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'info' });
+    // Optional: clear the flag after a short delay; actual implementation should clear on API completion
+    setTimeout(() => setRegenerating(prev => ({ ...prev, [key]: false })), 1500);
   };
 
   const handleOpenExplanation = (title, content) => {
@@ -1243,7 +1254,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                         alignItems: "center",
                         gap: 2,
                         mb: 2,
-                       
                       }}
                     >
                       <Box
@@ -1270,7 +1280,21 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                           {item.doc_name}
                         </Typography>
                       </Box>
-                      {getStatusChip(item.status)}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {getStatusChip(item.status)}
+                        <Tooltip title="Regenerate" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRegenerate(item)}
+                              disabled={Boolean(regenerating[item.doc_id || item.id])}
+                              sx={{ ml: 0.5 }}
+                            >
+                              <AutorenewIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
                     </Box>
 
                     {item.status === "processing" && (
