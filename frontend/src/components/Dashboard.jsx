@@ -212,9 +212,12 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [regenerating, setRegenerating] = useState({});
   const [viewFieldsOpen, setViewFieldsOpen] = useState(false);
   const [tempSelectedFields, setTempSelectedFields] = useState([]);
+  const [selectedDocIds, setSelectedDocIds] = useState([]);
+  const [tempSelectedDocs, setTempSelectedDocs] = useState([]);
   const [exportFieldsOpen, setExportFieldsOpen] = useState(false);
   const [tempExportFields, setTempExportFields] = useState([]);
   const [exportMode, setExportMode] = useState(null); // 'excel' | 'word'
+  const [tempExportDocs, setTempExportDocs] = useState([]);
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
@@ -226,6 +229,29 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     // Refresh the document list after adding
     getProjectStatus();
   };
+
+  // Initialize selected documents visibility from sessionStorage or default to all
+  useEffect(() => {
+    try {
+      const allIds = (extractionResults || []).map(d => d.doc_id || d.id);
+      if (allIds.length === 0) { setSelectedDocIds([]); return; }
+      let loaded = [];
+      if (selectedProjectId) {
+        const docsMap = JSON.parse(sessionStorage.getItem('project_docs_visible_map')) || {};
+        loaded = Array.isArray(docsMap[selectedProjectId]) ? docsMap[selectedProjectId] : [];
+      }
+      if ((!loaded || loaded.length === 0) && selectedProject?.name) {
+        const byName = JSON.parse(sessionStorage.getItem('project_docs_visible_map_by_name')) || {};
+        const nameLoaded = Array.isArray(byName[selectedProject.name]) ? byName[selectedProject.name] : [];
+        if (nameLoaded.length) loaded = nameLoaded;
+      }
+      // Fallback to all
+      const finalIds = (loaded && loaded.length) ? loaded.filter(id => allIds.includes(id)) : allIds;
+      setSelectedDocIds(finalIds);
+    } catch (e) {
+      setSelectedDocIds((extractionResults || []).map(d => d.doc_id || d.id));
+    }
+  }, [extractionResults, selectedProjectId, selectedProject?.name]);
 
   const handleRegenerate = async (doc) => {
     const docId = doc.doc_id || doc.id;
@@ -516,7 +542,24 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     const fields = getAllAvailableFields();
     setTempExportFields(tableHeaders && tableHeaders.length ? [...tableHeaders] : [...fields]);
     setExportMode(mode);
+    const allIds = (extractionResults || []).map(d => d.doc_id || d.id);
+    const currentDocs = (selectedDocIds && selectedDocIds.length) ? selectedDocIds : allIds;
+    setTempExportDocs([...currentDocs]);
     setExportFieldsOpen(true);
+  };
+
+  const applyExport = () => {
+    const fields = Array.isArray(tempExportFields) ? tempExportFields : [];
+    const docIds = Array.isArray(tempExportDocs) ? tempExportDocs : [];
+    if (!fields.length || !docIds.length) return;
+    const docsFiltered = (extractionResults || []).filter(d => docIds.includes(d.doc_id || d.id));
+    if (exportMode === 'excel') {
+      exportToExcel(docsFiltered, fields, selectedProject.name);
+    } else if (exportMode === 'word') {
+      exportToWord(docsFiltered, fields, selectedProject.name);
+    }
+    setExportFieldsOpen(false);
+    setExportMode(null);
   };
 
   const toggleTempExportField = (field) => {
@@ -528,16 +571,13 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     });
   };
 
-  const applyExport = () => {
-    const fields = Array.isArray(tempExportFields) ? tempExportFields : [];
-    if (!fields.length) return;
-    if (exportMode === 'excel') {
-      exportToExcel(extractionResults, fields, selectedProject.name);
-    } else if (exportMode === 'word') {
-      exportToWord(extractionResults, fields, selectedProject.name);
-    }
-    setExportFieldsOpen(false);
-    setExportMode(null);
+  const toggleTempExportDoc = (id) => {
+    setTempExportDocs((prev) => {
+      const set = new Set(prev);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return Array.from(set);
+    });
   };
 
   const handleViewResults = () => {
@@ -822,6 +862,9 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   const openViewFields = () => {
     setTempSelectedFields([...(tableHeaders || [])]);
+    const ids = (extractionResults || []).map(d => d.doc_id || d.id);
+    const current = (selectedDocIds && selectedDocIds.length) ? selectedDocIds : ids;
+    setTempSelectedDocs([...current]);
     setViewFieldsOpen(true);
   };
 
@@ -837,21 +880,43 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const applyViewFields = () => {
     const selected = Array.isArray(tempSelectedFields) ? tempSelectedFields : [];
     setTableHeaders(selected);
+    const selectedDocs = Array.isArray(tempSelectedDocs) ? tempSelectedDocs : [];
+    setSelectedDocIds(selectedDocs);
     try {
       if (selectedProjectId) {
         const map = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
         map[selectedProjectId] = selected;
         sessionStorage.setItem('project_fields_map', JSON.stringify(map));
+        const docsMap = JSON.parse(sessionStorage.getItem('project_docs_visible_map')) || {};
+        docsMap[selectedProjectId] = selectedDocs;
+        sessionStorage.setItem('project_docs_visible_map', JSON.stringify(docsMap));
       }
       if (selectedProject?.name) {
         const byName = JSON.parse(sessionStorage.getItem('project_fields_map_by_name')) || {};
         byName[selectedProject.name] = selected;
         sessionStorage.setItem('project_fields_map_by_name', JSON.stringify(byName));
+        const docsByName = JSON.parse(sessionStorage.getItem('project_docs_visible_map_by_name')) || {};
+        docsByName[selectedProject.name] = selectedDocs;
+        sessionStorage.setItem('project_docs_visible_map_by_name', JSON.stringify(docsByName));
       }
     } catch (e) {
       console.warn('Failed to persist selected fields', e);
     }
     setViewFieldsOpen(false);
+  };
+
+  const toggleTempDoc = (id) => {
+    setTempSelectedDocs((prev) => {
+      const set = new Set(prev);
+      if (set.has(id)) set.delete(id);
+      else set.add(id);
+      return Array.from(set);
+    });
+  };
+
+  const getVisibleDocs = () => {
+    const idsSet = new Set(selectedDocIds && selectedDocIds.length ? selectedDocIds : (extractionResults || []).map(d => d.doc_id || d.id));
+    return (extractionResults || []).filter(d => idsSet.has(d.doc_id || d.id));
   };
 
   if (!selectedProject) {
@@ -1186,7 +1251,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                 >
                   <TableRow>
                     <TableCell sx={{ minWidth: 220, position: 'sticky', left: 0, zIndex: 3, backgroundColor: (t) => t.palette.mode === 'dark' ? t.palette.background.default : '#eef2f7' }}>Field</TableCell>
-                    {extractionResults.map((doc) => (
+                    {getVisibleDocs().map((doc) => (
                       <TableCell key={doc.doc_id || doc.id} sx={{ minWidth: 220 }}>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <DescriptionIcon fontSize='small' color='action' />
@@ -1217,7 +1282,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                   {tableHeaders.map((header) => (
                     <TableRow key={header}>
                       <TableCell sx={{ fontWeight: 700, position: 'sticky', left: 0, zIndex: 2, backgroundColor: (t) => t.palette.background.paper }}>{formatFieldName(header)}</TableCell>
-                      {extractionResults.map((doc) => (
+                      {getVisibleDocs().map((doc) => (
                         <TableCell key={`${doc.doc_id || doc.id}-${header}`}>
                           {isEditing && header !== 'doc_name' ? (
                             <TextField
@@ -1307,7 +1372,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Choose which fields to include in the exported file.
           </Typography>
-          <FormGroup>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Fields</Typography>
+          <FormGroup sx={{ mb: 2 }}>
             {getAllAvailableFields().map((field) => (
               <FormControlLabel
                 key={`export-${field}`}
@@ -1321,10 +1387,29 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
               />
             ))}
           </FormGroup>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Documents</Typography>
+          <FormGroup>
+            {(extractionResults || []).map((doc) => {
+              const id = doc.doc_id || doc.id;
+              const name = doc.fileName || doc.docName || id;
+              return (
+                <FormControlLabel
+                  key={`export-doc-${id}`}
+                  control={
+                    <Checkbox
+                      checked={tempExportDocs.includes(id)}
+                      onChange={() => toggleTempExportDoc(id)}
+                    />
+                  }
+                  label={name}
+                />
+              );
+            })}
+          </FormGroup>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setExportFieldsOpen(false)} color="inherit">Cancel</Button>
-          <Button onClick={applyExport} variant="contained" disabled={tempExportFields.length === 0}>Export</Button>
+          <Button onClick={applyExport} variant="contained" disabled={tempExportFields.length === 0 || tempExportDocs.length === 0}>Export</Button>
         </DialogActions>
       </Dialog>
 
@@ -1341,7 +1426,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
             Choose which fields should be visible in the results table.
           </Typography>
-          <FormGroup>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Fields</Typography>
+          <FormGroup sx={{ mb: 2 }}>
             {getAllAvailableFields().map((field) => (
               <FormControlLabel
                 key={field}
@@ -1355,10 +1441,29 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
               />
             ))}
           </FormGroup>
+          <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 600 }}>Documents</Typography>
+          <FormGroup>
+            {(extractionResults || []).map((doc) => {
+              const id = doc.doc_id || doc.id;
+              const name = doc.fileName || doc.docName || id;
+              return (
+                <FormControlLabel
+                  key={`doc-${id}`}
+                  control={
+                    <Checkbox
+                      checked={tempSelectedDocs.includes(id)}
+                      onChange={() => toggleTempDoc(id)}
+                    />
+                  }
+                  label={name}
+                />
+              );
+            })}
+          </FormGroup>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setViewFieldsOpen(false)} color="inherit">Cancel</Button>
-          <Button onClick={applyViewFields} variant="contained" disabled={tempSelectedFields.length === 0}>Apply</Button>
+          <Button onClick={applyViewFields} variant="contained" disabled={tempSelectedFields.length === 0 || tempSelectedDocs.length === 0}>Apply</Button>
         </DialogActions>
       </Dialog>
 
