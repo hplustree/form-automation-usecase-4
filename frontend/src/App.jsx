@@ -26,9 +26,7 @@ function App() {
 
   const handleProjectSelect = (project) => {
     setSelectedProject(project);
-    console.log("Selected project:", project);
     const projectId = getProjectIdByName(project.name);
-    console.log("Selected project ID:", projectId);
     setSelectedProjectId(projectId);
 
     

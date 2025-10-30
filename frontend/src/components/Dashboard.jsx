@@ -3,10 +3,11 @@ import { alpha } from "@mui/material/styles";
 import {
   Box,
   Typography,
-  Tabs,
-  Tab,
+  Divider,
   Card,
   CardContent,
+  Tabs,
+  Tab,
   Table,
   TableBody,
   TableCell,
@@ -20,11 +21,15 @@ import {
   useTheme,
   Button,
   CircularProgress,
-  Divider,
-  Tooltip,
   TextField,
-  Snackbar,
-  Alert
+  Tooltip,
+  Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
+  Snackbar
 } from "@mui/material";
 import {
   Description as DescriptionIcon,
@@ -37,7 +42,10 @@ import InsertDriveFileOutlinedIcon from '@mui/icons-material/InsertDriveFileOutl
 import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutlineOutlined';
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import DownloadIcon from '@mui/icons-material/Download';
-import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult } from "../api/api";
+import AutorenewIcon from '@mui/icons-material/Autorenew';
+import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult, regenerateDocument } from "../api/api";
+import AddDocumentModal from "./AddDocumentModal";
+import AddIcon from '@mui/icons-material/Add';
 
 function TabPanel({ children, value, index, ...other }) {
   return (
@@ -66,14 +74,15 @@ const formatFieldName = (fieldName) => {
   if (!extractionResults.length || !tableHeaders.length) return;
 
   try {
-    // Create CSV content
-    const headers = ['File Name', ...tableHeaders.map(header => formatFieldName(header))];
+    // Create CSV content with fields in first column and document names as headers
+    const docNames = extractionResults.map(doc => doc.fileName);
+    const headers = ['File Name', ...docNames];
     let csvContent = headers.join(',') + '\n';
 
-    // Add rows
-    extractionResults.forEach(doc => {
-      const row = [doc.fileName];
-      tableHeaders.forEach(header => {
+    // Add rows for each field
+    tableHeaders.forEach(header => {
+      const row = [formatFieldName(header)];
+      extractionResults.forEach(doc => {
         const value = getFieldValueForExport(doc, header);
         // Escape commas and quotes in CSV
         const escapedValue = `"${String(value).replace(/"/g, '""')}"`;
@@ -114,14 +123,49 @@ const formatFieldName = (fieldName) => {
   if (!extractionResults.length || !tableHeaders.length) return;
 
   try {
-    const headers = ['File Name', ...tableHeaders.map((h) => formatFieldName(h))];
+    const docNames = extractionResults.map(doc => doc.fileName);
+    const headers = ['File Name', ...docNames];
+    
     // Build HTML table
-    const thead = `<tr>${headers.map(h => `<th style="border:1px solid #ccc;padding:6px;text-align:left;">${h}</th>`).join('')}</tr>`;
-    const tbody = extractionResults.map(doc => {
-      const cols = [doc.fileName, ...tableHeaders.map(h => String(getFieldValueForExport(doc, h)))];
-      return `<tr>${cols.map(c => `<td style="border:1px solid #ccc;padding:6px;vertical-align:top;white-space:pre-wrap;">${c.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</td>`).join('')}</tr>`;
+    const thead = `<tr>${headers.map(h => `<th style="border:1px solid #ccc;padding:6px;text-align:left;background-color:#f5f5f5;">${h}</th>`).join('')}</tr>`;
+    
+    // Add rows for each field
+    const tbody = tableHeaders.map(header => {
+      const fieldName = formatFieldName(header);
+      const values = extractionResults.map(doc => {
+        const value = String(getFieldValueForExport(doc, header));
+        return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      });
+      return `<tr>
+        <td style="border:1px solid #ccc;padding:6px;font-weight:500;background-color:#f9f9f9;">${fieldName}</td>
+        ${values.map(v => `<td style="border:1px solid #ccc;padding:6px;vertical-align:top;white-space:pre-wrap;">${v}</td>`).join('')}
+      </tr>`;
     }).join('');
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${projectName} Results</title></head><body><h2>${projectName} - Extraction Results</h2><table style="border-collapse:collapse;">${thead}${tbody}</table></body></html>`;
+    
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${projectName} Results</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h2 { color: #333; }
+          table { border-collapse: collapse; width: 100%; margin-top: 15px; }
+          th { background-color: #f5f5f5; font-weight: bold; }
+          td, th { border: 1px solid #ddd; padding: 8px; }
+          tr:nth-child(even) { background-color: #f9f9f9; }
+        </style>
+      </head>
+      <body>
+        <h2>${projectName} - Extraction Results</h2>
+        <table>
+          ${thead}
+          ${tbody}
+        </table>
+      </body>
+      </html>
+    `;
 
     const blob = new Blob([html], { type: 'application/msword;charset=utf-8;' });
     const link = document.createElement('a');
@@ -141,16 +185,82 @@ const formatFieldName = (fieldName) => {
 const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [tabValue, setTabValue] = useState(0);
   const [docStatus, setDocStatus] = useState([]);
+  const [statusByDoc, setStatusByDoc] = useState({}); // { doc_id: 'pending'|'processing'|'completed' }
   const [extractionResults, setExtractionResults] = useState([]);
   const [loadingResults, setLoadingResults] = useState(false);
   const [tableHeaders, setTableHeaders] = useState([]);
   const theme = useTheme();
   const [editingCell, setEditingCell] = useState(null); // { rowKey, fieldName }
+  const [editingField, setEditingField] = useState(null);
   const [editValue, setEditValue] = useState("");
-  const [savingEdit, setSavingEdit] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState({ success: false, message: '' });
   const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
   const [isEditing, setIsEditing] = useState(false);
   const [editedValues, setEditedValues] = useState({}); // { rowKey: { fieldName: value } }
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [explanationDialog, setExplanationDialog] = useState({
+    open: false,
+    title: '',
+    content: ''
+  });
+  const [addDocumentOpen, setAddDocumentOpen] = useState(false);
+  const [regenerating, setRegenerating] = useState({});
+
+  // Handler for adding documents
+  const handleAddDocument = (files) => {
+    setToast({
+      open: true,
+      message: `Successfully added ${files.length} document(s)`,
+      severity: "success",
+    });
+    // Refresh the document list after adding
+    getProjectStatus();
+  };
+
+  const handleRegenerate = async (doc) => {
+    const docId = doc.doc_id || doc.id;
+    if (!selectedProjectId || !docId) return;
+    setRegenerating(prev => ({ ...prev, [docId]: true }));
+
+    // Read selected field names for this project
+    let fieldNames = [];
+    try {
+      const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+      if (Array.isArray(fieldsMap[selectedProjectId])) fieldNames = fieldsMap[selectedProjectId];
+    } catch (e) {
+      console.warn('Failed to load project fields from sessionStorage', e);
+    }
+
+    // Optimistically set status to processing
+    setStatusByDoc(prev => ({ ...prev, [docId]: 'processing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
+
+    try {
+      await regenerateDocument(selectedProjectId, docId, fieldNames);
+      setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'success' });
+      // Let polling update actual status/progress
+    } catch (e) {
+      console.error('Failed to request regeneration', e);
+      setToast({ open: true, message: 'Failed to request regeneration', severity: 'error' });
+    } finally {
+      setRegenerating(prev => ({ ...prev, [docId]: false }));
+      // Trigger an immediate refresh
+      getProjectStatus();
+    }
+  };
+
+  const handleOpenExplanation = (title, content) => {
+    setExplanationDialog({
+      open: true,
+      title,
+      content: content || 'No explanation available.'
+    });
+  };
+
+  const handleCloseExplanation = () => {
+    setExplanationDialog(prev => ({ ...prev, open: false }));
+  };
 
   const buildRedirectUrl = (page) => {
     const base = import.meta.env.VITE_RESULTS_PAGE_BASE_URL || "";
@@ -172,11 +282,30 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   const getProjectStatus = async () => {
     try {
-      console.log("Fetching project details for project ID:", selectedProjectId);
       const result = await getProjectDetails(selectedProjectId);
-      console.log("Fetched project details:", result);
       // Expecting shape { project_id, ..., documents: [ { doc_id, doc_name, status, ... } ] }
-      setDocStatus(Array.isArray(result?.documents) ? result.documents : []);
+      const docs = Array.isArray(result?.documents) ? result.documents : [];
+
+      // Normalize and prevent status downgrade
+      const rank = { pending: 0, processing: 1, completed: 2 };
+      const merged = docs.map((d) => {
+        const id = d.doc_id || d.id;
+        const curr = normalizeStatus(d.status);
+        const prev = statusByDoc[id] ? normalizeStatus(statusByDoc[id]) : undefined;
+        const chosen = prev !== undefined && rank[prev] > rank[curr] ? prev : curr;
+        return { ...d, status: chosen };
+      });
+
+      setDocStatus(merged);
+      // Update local cache
+      setStatusByDoc((prevMap) => {
+        const next = { ...prevMap };
+        merged.forEach((d) => {
+          const id = d.doc_id || d.id;
+          next[id] = d.status;
+        });
+        return next;
+      });
     } catch (error) {
       console.error("Error fetching project details:", error);
     }
@@ -233,11 +362,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     
     try {
       setLoadingResults(true);
-      console.log("Fetching extraction results for project:", selectedProjectId);
-      // Fetch project-level results once
       const apiResponse = await getDocumentResults(selectedProjectId);
-      console.log("API Response (project results):", apiResponse);
-
       const docsMap = apiResponse?.documents || {};
 
       // Transform backend shape to table-friendly shape (include all available results; filtering is via headers)
@@ -278,9 +403,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
       
-      console.log("Processed extraction results:", resultsArray);
-      // console.log("Generated table headers:", headers);
-      
     } catch (error) {
       console.error("Error fetching extraction results:", error);
     } finally {
@@ -294,7 +416,17 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     if (headers && headers.length) setTableHeaders(headers);
   }, [selectedProjectId, selectedProject?.name]);
 
-  const getStatusChip = (status) => {
+  const normalizeStatus = (raw) => {
+    if (!raw) return 'pending';
+    const s = String(raw).toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (["completed","complete","processed","done","success","succeeded"].includes(s)) return "completed";
+    if (["processing","in_progress","running","queued","inprogress" , "chunks_ready"].includes(s)) return "processing";
+    if (["pending","created","waiting","queued_pending"].includes(s)) return "pending";
+    return 'pending';
+  };
+
+  const getStatusChip = (statusRaw) => {
+    const status = normalizeStatus(statusRaw);
     const statusConfig = {
       completed: {
         label: "Completed",
@@ -376,7 +508,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   };
 
   // Compute dynamic label for Processing tab
-  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => d.status === 'completed');
+  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => normalizeStatus(d.status) === 'completed');
   const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
 
   const startGlobalEdit = () => {
@@ -785,7 +917,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           }}
         >
           <Tab label="Results" />
-          <Tab label={processingTabLabel} />
+          <Tab label="Documents" />
         </Tabs>
       </Box>
 
@@ -1044,7 +1176,14 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                         </Box>
                                       }
                                     >
-                                      <IconButton size='small' sx={{ p: 0.25 }}>
+                                      <IconButton 
+                                        size='small' 
+                                        sx={{ p: 0.25 }}
+                                        onClick={() => handleOpenExplanation(
+                                          `${formatFieldName(header)} - ${doc.fileName || 'Document'}`,
+                                          String(doc.results[header].explanation)
+                                        )}
+                                      >
                                         <VisibilityOutlinedIcon fontSize='inherit' />
                                       </IconButton>
                                     </Tooltip>
@@ -1062,38 +1201,78 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           )}
         </Box>
       </TabPanel>
-      {/* <Snackbar
-        open={toast.open}
-        autoHideDuration={2500}
-        onClose={() => setToast({ ...toast, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+
+      {/* Explanation Dialog */}
+      <Dialog
+        open={explanationDialog.open}
+        onClose={handleCloseExplanation}
+        aria-labelledby="explanation-dialog-title"
+        maxWidth="md"
+        fullWidth
       >
-        <Alert onClose={() => setToast({ ...toast, open: false })} severity={toast.severity} sx={{ width: '100%' }}>
-          {toast.message}
-        </Alert>
-      </Snackbar> */}
+        <DialogTitle id="explanation-dialog-title">
+          {explanationDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {explanationDialog.content}
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseExplanation} color="primary">
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Processing Tab */}
       <TabPanel value={tabValue} index={1}>
         <Box 
-                sx={{ p:3, width: '100%',
-                  // backgroundColor:"#f5f6f7"
-                 backgroundColor: (t) =>
-            t.palette.mode === 'dark' ? t.palette.background.default : "#f5f6f7"
-                , borderRadius:2, display: 'flex', flexDirection: 'column', maxHeight: '65vh', overflow: 'hidden'}}
->
-          <Typography variant="h6" gutterBottom sx={{ fontWeight: 500, color: (theme) =>
-        theme.palette.mode === "dark" ? "white" : "#282C34",
-      "&.Mui-selected": {
-        color: (theme) =>
-          theme.palette.mode === "dark" ? "white" : "#282C34",
-      }, }}>
-            Processing Queue
-          </Typography>
+          sx={{ 
+            p: 3, 
+            width: '100%',
+            backgroundColor: (t) => t.palette.mode === 'dark' ? t.palette.background.default : "#f5f6f7",
+            borderRadius: 2, 
+            display: 'flex', 
+            flexDirection: 'column', 
+            maxHeight: '65vh', 
+            overflow: 'hidden'
+          }}
+        >
+            <Typography 
+              variant="h6" 
+              sx={{ 
+                fontWeight: 500, 
+                color: (theme) => theme.palette.mode === "dark" ? "white" : "#282C34",
+                "&.Mui-selected": {
+                  color: (theme) => theme.palette.mode === "dark" ? "white" : "#282C34",
+                } 
+              }}
+            >
+              Processing Queue
+            </Typography>
+            
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+
           <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
             Real-time status of document processing
           </Typography>
-
+          <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setAddDocumentOpen(true)}
+              sx={{
+                textTransform: 'none',
+                fontWeight: 500,
+                borderRadius: '6px',
+                px: 2,
+                py: 1,
+              }}
+            >
+              Add Document
+            </Button>
+         
+        </Box>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2, flex: 1, minHeight: 0, overflowY: 'auto', scrollbarWidth: 'thin', '&::-webkit-scrollbar': { width: 6 }, '&::-webkit-scrollbar-thumb': { backgroundColor: (t) => t.palette.mode === 'dark' ? 'rgba(255,255,255,0.25)' : 'rgba(0,0,0,0.25)', borderRadius: 8 }, '&::-webkit-scrollbar-track': { backgroundColor: 'transparent' } }}>
             {docStatus.length === 0 ? (
               <Typography color="text.secondary" sx={{ textAlign: 'center', p: 3 }}>
@@ -1120,7 +1299,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                         alignItems: "center",
                         gap: 2,
                         mb: 2,
-                       
                       }}
                     >
                       <Box
@@ -1147,10 +1325,24 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                           {item.doc_name}
                         </Typography>
                       </Box>
-                      {getStatusChip(item.status)}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        {getStatusChip(item.status)}
+                        <Tooltip title="Regenerate" arrow>
+                          <span>
+                            <IconButton
+                              size="small"
+                              onClick={() => handleRegenerate(item)}
+                              disabled={Boolean(regenerating[item.doc_id || item.id])}
+                              sx={{ ml: 0.5 }}
+                            >
+                              <AutorenewIcon fontSize="small" />
+                            </IconButton>
+                          </span>
+                        </Tooltip>
+                      </Box>
                     </Box>
 
-                    {item.status === "processing" && (
+                    {normalizeStatus(item.status) === "processing" && (
                       <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                         <LinearProgress
                           variant="determinate"
@@ -1214,6 +1406,13 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           </Button>
         </Box>
       )}
+      {/* Add Document Modal */}
+      <AddDocumentModal
+        open={addDocumentOpen}
+        onClose={() => setAddDocumentOpen(false)}
+        onAddDocument={handleAddDocument}
+        projectId={selectedProjectId}
+      />
     </Box>
   );
 };
