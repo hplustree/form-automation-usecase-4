@@ -79,7 +79,6 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
     setDragOver(false);
     const files = Array.from(e.dataTransfer.files);
     setUploadedFiles((prev) => mergeFiles(prev, files));
-    console.log("Files dropped:", files);
   };
 
   const handleFileSelect = (e) => {
@@ -87,7 +86,6 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
     setUploadedFiles((prev) => mergeFiles(prev, files));
     // allow selecting the same file again by resetting the input value
     e.target.value = null;
-    console.log("Files selected:", files);
   };
 
   //       name: projectName,
@@ -210,7 +208,6 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
           console.warn('Failed to seed pending results to sessionStorage', e);
         }
 
-        console.log("Upload response:", response);
         // alert("Project created and files uploaded successfully!");
       } else {
         // alert("Project created! No files were uploaded.");

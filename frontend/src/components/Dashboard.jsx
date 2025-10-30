@@ -43,7 +43,7 @@ import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutli
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import DownloadIcon from '@mui/icons-material/Download';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
-import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult } from "../api/api";
+import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult, regenerateDocument } from "../api/api";
 import AddDocumentModal from "./AddDocumentModal";
 import AddIcon from '@mui/icons-material/Add';
 
@@ -185,6 +185,7 @@ const formatFieldName = (fieldName) => {
 const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [tabValue, setTabValue] = useState(0);
   const [docStatus, setDocStatus] = useState([]);
+  const [statusByDoc, setStatusByDoc] = useState({}); // { doc_id: 'pending'|'processing'|'completed' }
   const [extractionResults, setExtractionResults] = useState([]);
   const [loadingResults, setLoadingResults] = useState(false);
   const [tableHeaders, setTableHeaders] = useState([]);
@@ -197,6 +198,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [toast, setToast] = useState({ open: false, message: "", severity: "success" });
   const [isEditing, setIsEditing] = useState(false);
   const [editedValues, setEditedValues] = useState({}); // { rowKey: { fieldName: value } }
+  const [savingEdit, setSavingEdit] = useState(false);
   const [explanationDialog, setExplanationDialog] = useState({
     open: false,
     title: '',
@@ -207,8 +209,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
-    // TODO: Implement API integration for document upload
-    console.log("Documents to be uploaded:", files);
     setToast({
       open: true,
       message: `Successfully added ${files.length} document(s)`,
@@ -218,13 +218,36 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     getProjectStatus();
   };
 
-  const handleRegenerate = (doc) => {
-    const key = doc.doc_id || doc.id;
-    setRegenerating(prev => ({ ...prev, [key]: true }));
-    // TODO: Integrate regenerate API call here
-    setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'info' });
-    // Optional: clear the flag after a short delay; actual implementation should clear on API completion
-    setTimeout(() => setRegenerating(prev => ({ ...prev, [key]: false })), 1500);
+  const handleRegenerate = async (doc) => {
+    const docId = doc.doc_id || doc.id;
+    if (!selectedProjectId || !docId) return;
+    setRegenerating(prev => ({ ...prev, [docId]: true }));
+
+    // Read selected field names for this project
+    let fieldNames = [];
+    try {
+      const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+      if (Array.isArray(fieldsMap[selectedProjectId])) fieldNames = fieldsMap[selectedProjectId];
+    } catch (e) {
+      console.warn('Failed to load project fields from sessionStorage', e);
+    }
+
+    // Optimistically set status to processing
+    setStatusByDoc(prev => ({ ...prev, [docId]: 'processing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
+
+    try {
+      await regenerateDocument(selectedProjectId, docId, fieldNames);
+      setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'success' });
+      // Let polling update actual status/progress
+    } catch (e) {
+      console.error('Failed to request regeneration', e);
+      setToast({ open: true, message: 'Failed to request regeneration', severity: 'error' });
+    } finally {
+      setRegenerating(prev => ({ ...prev, [docId]: false }));
+      // Trigger an immediate refresh
+      getProjectStatus();
+    }
   };
 
   const handleOpenExplanation = (title, content) => {
@@ -259,11 +282,30 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   const getProjectStatus = async () => {
     try {
-      console.log("Fetching project details for project ID:", selectedProjectId);
       const result = await getProjectDetails(selectedProjectId);
-      console.log("Fetched project details:", result);
       // Expecting shape { project_id, ..., documents: [ { doc_id, doc_name, status, ... } ] }
-      setDocStatus(Array.isArray(result?.documents) ? result.documents : []);
+      const docs = Array.isArray(result?.documents) ? result.documents : [];
+
+      // Normalize and prevent status downgrade
+      const rank = { pending: 0, processing: 1, completed: 2 };
+      const merged = docs.map((d) => {
+        const id = d.doc_id || d.id;
+        const curr = normalizeStatus(d.status);
+        const prev = statusByDoc[id] ? normalizeStatus(statusByDoc[id]) : undefined;
+        const chosen = prev !== undefined && rank[prev] > rank[curr] ? prev : curr;
+        return { ...d, status: chosen };
+      });
+
+      setDocStatus(merged);
+      // Update local cache
+      setStatusByDoc((prevMap) => {
+        const next = { ...prevMap };
+        merged.forEach((d) => {
+          const id = d.doc_id || d.id;
+          next[id] = d.status;
+        });
+        return next;
+      });
     } catch (error) {
       console.error("Error fetching project details:", error);
     }
@@ -320,11 +362,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     
     try {
       setLoadingResults(true);
-      console.log("Fetching extraction results for project:", selectedProjectId);
-      // Fetch project-level results once
       const apiResponse = await getDocumentResults(selectedProjectId);
-      console.log("API Response (project results):", apiResponse);
-
       const docsMap = apiResponse?.documents || {};
 
       // Transform backend shape to table-friendly shape (include all available results; filtering is via headers)
@@ -365,9 +403,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
       
-      console.log("Processed extraction results:", resultsArray);
-      // console.log("Generated table headers:", headers);
-      
     } catch (error) {
       console.error("Error fetching extraction results:", error);
     } finally {
@@ -381,7 +416,17 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     if (headers && headers.length) setTableHeaders(headers);
   }, [selectedProjectId, selectedProject?.name]);
 
-  const getStatusChip = (status) => {
+  const normalizeStatus = (raw) => {
+    if (!raw) return 'pending';
+    const s = String(raw).toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
+    if (["completed","complete","processed","done","success","succeeded"].includes(s)) return "completed";
+    if (["processing","in_progress","running","queued","inprogress" , "chunks_ready"].includes(s)) return "processing";
+    if (["pending","created","waiting","queued_pending"].includes(s)) return "pending";
+    return 'pending';
+  };
+
+  const getStatusChip = (statusRaw) => {
+    const status = normalizeStatus(statusRaw);
     const statusConfig = {
       completed: {
         label: "Completed",
@@ -463,7 +508,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   };
 
   // Compute dynamic label for Processing tab
-  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => d.status === 'completed');
+  const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => normalizeStatus(d.status) === 'completed');
   const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
 
   const startGlobalEdit = () => {
@@ -1297,7 +1342,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                       </Box>
                     </Box>
 
-                    {item.status === "processing" && (
+                    {normalizeStatus(item.status) === "processing" && (
                       <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                         <LinearProgress
                           variant="determinate"
@@ -1366,6 +1411,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
         open={addDocumentOpen}
         onClose={() => setAddDocumentOpen(false)}
         onAddDocument={handleAddDocument}
+        projectId={selectedProjectId}
       />
     </Box>
   );

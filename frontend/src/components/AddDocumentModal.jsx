@@ -15,8 +15,9 @@ import {
 import { alpha } from "@mui/material/styles";
 import { Close as CloseIcon } from "@mui/icons-material";
 import { LuUpload } from "react-icons/lu";
+import { uploadDocuments } from "../api/api";
 
-const AddDocumentModal = ({ open, onClose, onAddDocument }) => {
+const AddDocumentModal = ({ open, onClose, onAddDocument, projectId }) => {
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const theme = useTheme();
@@ -53,12 +54,30 @@ const AddDocumentModal = ({ open, onClose, onAddDocument }) => {
     e.target.value = null;
   };
 
-  const handleSubmit = () => {
-    // TODO: Add API integration here
-    console.log("Files to upload:", uploadedFiles);
-    onAddDocument(uploadedFiles);
-    setUploadedFiles([]);
-    onClose();
+  const handleSubmit = async () => {
+    if (!uploadedFiles.length) return;
+    if (!projectId) {
+      console.error("No projectId provided for document upload");
+      return;
+    }
+
+    try {
+      // Read previously selected field names for this project
+      let fieldNames = [];
+      try {
+        const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+        if (Array.isArray(fieldsMap[projectId])) fieldNames = fieldsMap[projectId];
+      } catch (e) {
+        console.warn('Failed to load project fields from sessionStorage', e);
+      }
+
+      await uploadDocuments(projectId, uploadedFiles, fieldNames);
+      onAddDocument && onAddDocument(uploadedFiles);
+      setUploadedFiles([]);
+      onClose();
+    } catch (e) {
+      console.error("Failed to upload documents", e);
+    }
   };
 
   return (

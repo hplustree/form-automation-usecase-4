@@ -3,7 +3,6 @@ import axios from "axios";
 const API_URL = import.meta.env.VITE_API_URL
 
 export const upload_file = async (projectData, files) => {
-    console.log(projectData , files)
     try {
       const formData = new FormData();
 
@@ -71,9 +70,6 @@ export const getDocumentResults = async (projectId) => {
 
 export const getTemplates = async (template_name) => {
   try {
-    // const code = typeof template_name === "string" ? template_name : template_name?.code :   "");
-    // const code = template_name.code;
-    console.log(template_name , "code")
     const response = await axios.post(
       `${API_URL}/project/process-template`,
       { template_name: template_name },
@@ -150,6 +146,53 @@ export const getProjects = async (skip = 0, limit = 100) => {
     return response.data;
   } catch (error) {
     console.error("Error fetching projects:", error);
+    throw error;
+  }
+};
+
+// Upload additional documents to an existing project
+export const uploadDocuments = async (projectId, files, fieldNames = [], templateName = "spa_fields") => {
+  try {
+    const formData = new FormData();
+    // Append files (can be multiple)
+    files.forEach((file) => {
+      formData.append("files", file);
+    });
+    // Append field names as a JSON array string
+    formData.append("field_names", JSON.stringify(fieldNames || []));
+    // Append template name (backend default used if not provided)
+    if (templateName) {
+      formData.append("template_name", templateName);
+    }
+
+    const response = await axios.post(`${API_URL}/project/${projectId}/documents`, formData, {
+      headers: {
+        accept: "application/json",
+        "Content-Type": "multipart/form-data",
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error uploading documents:", error);
+    throw error;
+  }
+};
+
+// Regenerate a document's extraction for specified fields
+export const regenerateDocument = async (projectId, documentId, fieldNames = []) => {
+  try {
+    const params = {};
+    if (Array.isArray(fieldNames) && fieldNames.length) {
+      params.field_names = fieldNames.join(',');
+    }
+    const url = `${API_URL}/project/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/regenerate`;
+    const response = await axios.post(url, null, {
+      params,
+      headers: { accept: "application/json" },
+    });
+    return response.data;
+  } catch (error) {
+    console.error("Error regenerating document:", error);
     throw error;
   }
 };

@@ -206,32 +206,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
   };
 
-//   const handleViewResults = () => setTabValue(0);
-//   console.log(selectedProjectId , "selected proejct id ")
-//   useEffect(() => {
-//     if (!selectedProjectId) return;
-//     setDocStatus([]);
-//     setExtractionResults([]);
-//     setTableHeaders([]);
-//     getProjectStatus();
-//     // If user is on Results tab when switching projects, fetch results immediately
-//     // if (tabValue === 0) {
-//       fetchExtractionResults();
-//     // }
-//     const interval = setInterval(getProjectStatus, 10000);
-//     return () => clearInterval(interval);
-//   }, [selectedProjectId]);
-
-//   useEffect(() => {
-//     // if (tabValue === 0 && selectedProjectId)
-//     if (tabValue === 0 && selectedProjectId){
-        
-//          fetchExtractionResults();
-//     }
-
-//   }, [tabValue, selectedProjectId]);
-
-
     const handleExport = () => {
     exportToExcel(extractionResults, tableHeaders, selectedProject.name);
     };
@@ -362,34 +336,33 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
 
           {/* Export Button and Instructions Row */}
-<Box sx={{ 
-  display: 'flex', 
-  justifyContent: 'space-between', 
-  alignItems: 'center', 
-  mb: 3 
-}}>
-  <Typography variant="body2" color="text.secondary">
-    {loadingResults ? "Loading results..." : "Click any cell to edit extracted data"}
-  </Typography>
-  
-  <Button
-    variant="outlined"
-    startIcon={<DownloadIcon />}
-    onClick={handleExport}
-    disabled={extractionResults.length === 0 || tableHeaders.length === 0}
-    sx={{
-      textTransform: 'none',
-      fontWeight: 600,
-      borderRadius: '6px',
-      px: 2,
-      py: 1
-    }}
-  >
-    Export Results
-  </Button>
-</Box>
-          {console.log(extractionResults , "extractionResults")}
-          {loadingResults ? (
+        <Box sx={{ 
+          display: 'flex', 
+          justifyContent: 'space-between', 
+          alignItems: 'center', 
+          mb: 3 
+        }}>
+          <Typography variant="body2" color="text.secondary">
+            {loadingResults ? "Loading results..." : "Click any cell to edit extracted data"}
+          </Typography>
+          
+          <Button
+            variant="outlined"
+            startIcon={<DownloadIcon />}
+            onClick={handleExport}
+            disabled={extractionResults.length === 0 || tableHeaders.length === 0}
+            sx={{
+              textTransform: 'none',
+              fontWeight: 600,
+              borderRadius: '6px',
+              px: 2,
+              py: 1
+            }}
+          >
+            Export Results
+          </Button>
+        </Box>
+                  {loadingResults ? (
             <Box sx={{ display: "flex", justifyContent: "center", p: 3 }}>
               <CircularProgress />
             </Box>
