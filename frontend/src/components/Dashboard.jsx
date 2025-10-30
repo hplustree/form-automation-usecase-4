@@ -246,7 +246,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     } finally {
       setRegenerating(prev => ({ ...prev, [docId]: false }));
       // Trigger an immediate refresh
-      getProjectStatus();
+      // getProjectStatus();
     }
   };
 
