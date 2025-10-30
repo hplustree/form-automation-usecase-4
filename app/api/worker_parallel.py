@@ -10,7 +10,7 @@ import json
 import time
 import random
 import uuid
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from datetime import datetime
 import redis as rqredis
 from sqlalchemy.orm import Session
@@ -22,6 +22,7 @@ from app.core.validate_agents import ValidationSystem
 from app.utils.file_handler import DocumentLoader
 from app.logging_config import logger
 from app.db.database import SessionLocal
+from app.utils.worker_manager import WorkerManager
 from app.db.operations import (
     ProjectOperations,
     DocumentOperations,
@@ -30,6 +31,7 @@ from app.db.operations import (
     FieldQueueOperations
 )
 from app.db.models import FieldQueue, FieldResult
+from collections import defaultdict
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 REDIS_TTL_SECONDS = int(os.getenv("REDIS_TTL_SECONDS", 86400 * 7))
@@ -40,6 +42,18 @@ sync_redis = rqredis.from_url(REDIS_URL)
 # Create separate queues for documents and fields
 document_queue = Queue("documents", connection=sync_redis)
 field_queue = Queue("fields", connection=sync_redis)
+
+
+def get_queue_for_project(project_id: str, queue_type: str = "documents") -> Queue:
+    """Get a project-specific queue for hierarchical processing."""
+    queue_name = f"{queue_type}:{project_id}"
+    return Queue(queue_name, connection=sync_redis)
+
+
+def get_queue_for_document(project_id: str, document_id: str) -> Queue:
+    """Get a document-specific field queue for hierarchical processing."""
+    queue_name = f"fields:{project_id}:{document_id}"
+    return Queue(queue_name, connection=sync_redis)
 
 
 def retry_api_call(func, *args, max_retries=MAX_RETRIES, **kwargs):
@@ -97,6 +111,52 @@ def init_services(model: str = None, reasoning_effort: str = None):
     }
 
 
+def extract_page_numbers(chunk: Dict) -> List[int]:
+    """Extract page numbers from a chunk, handling both single and multiple page formats."""
+    page_numbers = chunk.get("page_numbers", chunk.get("page_number", []))
+    
+    if isinstance(page_numbers, int):
+        return [page_numbers]
+    elif isinstance(page_numbers, list):
+        return [int(p) for p in page_numbers if p is not None]
+    else:
+        return []
+
+
+def extract_page_numbers_from_keys(page_keys: List[str], doc_id: str) -> List[int]:
+    """
+    Extract page numbers from page keys.
+    Page keys are in format: {doc_id}::page:{page_number}
+    """
+    pages = []
+    for key in page_keys:
+        try:
+            # Extract page number from key format: doc_id::page:123
+            if "::page:" in key:
+                page_str = key.split("::page:")[-1]
+                pages.append(int(page_str))
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Failed to extract page number from key {key}: {e}")
+    return sorted(pages)
+
+
+def transform_page_scores(page_scores: Dict[str, float], doc_id: str) -> Dict[int, float]:
+    """
+    Transform page scores from key format to page number format.
+    Input: {"{doc_id}::page:1": 0.95, "{doc_id}::page:2": 0.87}
+    Output: {1: 0.95, 2: 0.87}
+    """
+    transformed = {}
+    for key, score in page_scores.items():
+        try:
+            if "::page:" in key:
+                page_num = int(key.split("::page:")[-1])
+                transformed[page_num] = score
+        except (ValueError, IndexError) as e:
+            logger.warning(f"Failed to transform page score for key {key}: {e}")
+    return transformed
+
+
 def process_document(
     project_id: str,
     document_id: str,
@@ -121,8 +181,13 @@ def process_document(
     # Initialize timing and process tracking
     start_time = time.time()
     process = psutil.Process()
-    worker_id = str(uuid.uuid4())[:8]  # Shorter worker ID for logs
+    worker_id = os.getenv("WORKER_ID", str(uuid.uuid4())[:8])  # Use env worker ID or generate one
+    worker_type = os.getenv("WORKER_TYPE", "document")
+    use_hierarchical = os.getenv("USE_HIERARCHICAL_WORKERS", "false").lower() == "true"
+    
     db = SessionLocal()
+    worker_manager = None
+    
     try:
         # Get document from database - ensure we're using the correct ID fields
         logger.info(f"[Worker {worker_id}] Fetching document {document_id} from project {project_id}")
@@ -301,7 +366,7 @@ def process_document(
                 DocumentOperations.update_document_status(
                     db,
                     document_id,
-                    status="chunks_ready",
+                    status="processing",
                     chunks_count=len(chunks),
                     page_count=max_page_number if chunks else 0
                 )
@@ -354,6 +419,28 @@ def process_document(
                 logger.warning(f"[Worker {worker_id}] Document marked as completed with warning: {warning_msg}")
                 return
             
+            # Determine which queue to use for field extraction
+            if use_hierarchical:
+                # Spawn dedicated field workers for this document
+                num_field_workers = int(os.getenv("NUM_FIELD_WORKERS_PER_DOC", "5"))
+                logger.info(f"[{worker_type} Worker {worker_id}] Spawning {num_field_workers} field workers for document {document_id}")
+                
+                worker_manager = WorkerManager(REDIS_URL)
+                field_workers = worker_manager.spawn_field_workers(
+                    project_id=project_id,
+                    document_id=document_id,
+                    num_workers=num_field_workers,
+                    worker_id_prefix=f"{worker_id}"
+                )
+                
+                # Use document-specific queue for hierarchical processing
+                target_field_queue = get_queue_for_document(project_id, document_id)
+                logger.info(f"[{worker_type} Worker {worker_id}] Using hierarchical field queue: {target_field_queue.name}")
+            else:
+                # Use global field queue for traditional parallel processing
+                target_field_queue = field_queue
+                logger.info(f"[{worker_type} Worker {worker_id}] Using global field queue: {target_field_queue.name}")
+            
             # Process each field
             for field_config in fields_config:
                 if not field_config or not field_config.get('field_name'):
@@ -381,8 +468,8 @@ def process_document(
                         depends_on_doc=True
                     )
                     
-                    # Also enqueue in RQ for processing
-                    field_queue.enqueue(
+                    # Enqueue in RQ for processing using the appropriate queue
+                    target_field_queue.enqueue(
                         'app.api.worker_parallel.process_field',
                         args=(
                             document_id,
@@ -519,11 +606,22 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                 # Build context from search results
                 context_chunks = []
                 for result in search_results:
+                    # Handle both single page_number and page_numbers list
+                    page_nums = result.get("page_numbers", result.get("page_number"))
+                    if isinstance(page_nums, int):
+                        page_nums = [page_nums]
+                    elif not isinstance(page_nums, list):
+                        page_nums = []
+                    
                     context_chunks.append({
                         "text": result["text"],
-                        "page_number": result["page_number"],
+                        "page_number": result.get("page_number", page_nums[0] if page_nums else 0),
+                        "page_numbers": page_nums,
                         "chunk_number": result["chunk_number"],
-                        "hybrid_score": result["hybrid_score"]
+                        "hybrid_score": result["hybrid_score"],
+                        "doc_id": document_id,
+                        "document_name": result.get("doc_name", ""),
+                        "filename": result.get("doc_name", "")
                     })
                 
                 # Generate initial answer using LLM
@@ -557,22 +655,82 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                 initial_answer = _data.get("verbatim_answer", "")
                 initial_explanation = _data.get("explanation", None)
                 
-                # Validate and improve
-                validated_response = retry_api_call(
-                    validation_system.validate_and_improve,
-                    user_query=prompt,
-                    initial_answer=initial_answer,
-                    initial_explanation=initial_explanation,
-                    explanation_needed=True,
-                    prompt_type=prompt_type,
-                    chunks=context_chunks,
-                    pages=context_pages,
-                )
+                # Check if initial answer is empty
+                if not initial_answer or not initial_answer.strip():
+                    logger.warning(f"[Worker {worker_id}] Initial answer is empty for field '{field_name}'")
+                    initial_answer = "Information not found in the provided documents."
+                    initial_explanation = "No relevant information could be extracted from the document chunks."
                 
-                # Extract source pages
-                source_pages = sorted(list(set([
-                    chunk["page_number"] for chunk in context_chunks[:3]
-                ])))
+                # Validate and improve with fallback
+                try:
+                    validated_response = retry_api_call(
+                        validation_system.validate_and_improve,
+                        user_query=prompt,
+                        initial_answer=initial_answer,
+                        initial_explanation=initial_explanation,
+                        explanation_needed=True,
+                        prompt_type=prompt_type,
+                        chunks=context_chunks,
+                        pages=context_pages,
+                    )
+                except Exception as validation_error:
+                    logger.warning(f"[Worker {worker_id}] Validation failed: {str(validation_error)}. Using initial answer without validation.")
+                    # Fallback to initial answer if validation fails
+                    validated_response = {
+                        "final_answer": initial_answer,
+                        "final_answer_explanation": initial_explanation or "",
+                        "final_confidence_score": 0.5  # Lower confidence since not validated
+                    }
+                
+                # Extract source pages using improved logic with BM25 scoring
+                # Group chunks by document (in this case, single document)
+                chunks_by_doc_id = defaultdict(list)
+                for chunk in context_chunks:
+                    doc_id = chunk.get("doc_id", document_id)
+                    chunks_by_doc_id[doc_id].append(chunk)
+                
+                # Collect all pages from chunks
+                all_pages = sorted(list(set(
+                    page for chunk in context_chunks
+                    for page in extract_page_numbers(chunk)
+                )))
+                
+                # Use LLM-based page selection if pages are available
+                source_pages = all_pages
+                page_scores = {}
+                
+                if all_pages:
+                    try:
+                        # Call select_top_pages for intelligent page selection
+                        selected_page_keys, page_scores = retry_api_call(
+                            llm_service.select_top_pages,
+                            prompt=prompt,
+                            answer=validated_response["final_answer"],
+                            context_pages=context_pages,
+                            page_numbers=all_pages,
+                            collection_id=project_id,
+                            context_chunks=context_chunks,
+                            explanation=validated_response.get("final_answer_explanation")
+                        )
+                        
+                        # Extract page numbers from keys
+                        source_pages = extract_page_numbers_from_keys(selected_page_keys, document_id)
+                        
+                        # Transform page scores for storage
+                        transformed_page_scores = transform_page_scores(page_scores, document_id)
+                        
+                        logger.info(f"[Worker {worker_id}] Selected {len(source_pages)} pages using BM25 scoring: {source_pages}")
+                        logger.info(f"[Worker {worker_id}] Page scores: {transformed_page_scores}")
+                        
+                    except Exception as e:
+                        logger.warning(f"[Worker {worker_id}] Page selection failed: {str(e)}. Using all pages: {all_pages}")
+                        source_pages = all_pages
+                        transformed_page_scores = {}
+                else:
+                    transformed_page_scores = {}
+                
+                # Get unified references from LLM service
+                unified_references = getattr(llm_service, '_last_unified_references', [])
                 
                 # Clean and format answer
                 import re
@@ -600,6 +758,8 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     "explanation": validated_response.get("final_answer_explanation", ""),
                     "confidence": validated_response["final_confidence_score"],
                     "source_pages": source_pages,
+                    "page_scores": transformed_page_scores,
+                    "unified_references": unified_references,
                     "chunks": [
                         {
                             "page": chunk["page_number"],
@@ -614,6 +774,14 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
             # Save result to database immediately
             logger.info(f"Saving field result for '{field_name}' with confidence {result.get('confidence', 0):.2f}")
             
+            # Store page_scores and unified_references in chunks JSON field
+            chunks_data = result.get("chunks", [])
+            chunks_with_metadata = {
+                "chunks": chunks_data,
+                "page_scores": result.get("page_scores", {}),
+                "unified_references": result.get("unified_references", [])
+            }
+            
             FieldResultOperations.create_field_result(
                 db,
                 document_id=document_id,
@@ -624,7 +792,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     "explanation": result.get("explanation"),
                     "confidence": result.get("confidence", 0),
                     "source_pages": result.get("source_pages", []),
-                    "chunks": result.get("chunks", []),
+                    "chunks": chunks_with_metadata,  # Store all metadata in chunks JSON
                     "status": result["status"],
                     "model_used": model,
                     "reasoning_mode": mode
@@ -646,7 +814,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
         except Exception as e:
             logger.error(f"Error processing field '{field_name}': {str(e)}")
             
-            # Save error result
+            # Save error result with error_message field
             FieldResultOperations.create_field_result(
                 db,
                 document_id=document_id,
@@ -655,8 +823,9 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     "value": "Error",
                     "confidence": 0.0,
                     "source_pages": [],
+                    "chunks": {"chunks": [], "page_scores": {}, "unified_references": []},
                     "status": "failed",
-                    "error": str(e),
+                    "error_message": str(e),  # Use error_message instead of error
                     "model_used": model,
                     "reasoning_mode": mode
                 }
@@ -794,10 +963,18 @@ def process_project_parallel(project_id: str):
     """
     Main entry point for parallel project processing.
     This function enqueues all documents for parallel processing.
+    
+    Supports two modes:
+    1. Global queue mode (USE_HIERARCHICAL_WORKERS=false): Uses shared document_queue
+    2. Hierarchical mode (USE_HIERARCHICAL_WORKERS=true): Uses project-specific queues with dedicated workers
     """
-    logger.info(f"Starting parallel project processing: {project_id}")
+    use_hierarchical = os.getenv("USE_HIERARCHICAL_WORKERS", "false").lower() == "true"
+    worker_id = os.getenv("WORKER_ID", "unknown")
+    logger.info(f"[Project Worker {worker_id}] Starting parallel project processing: {project_id} (hierarchical={use_hierarchical})")
     
     db = SessionLocal()
+    worker_manager = None
+    
     try:
         # Get project from database
         project = ProjectOperations.get_project(db, project_id)
@@ -811,7 +988,28 @@ def process_project_parallel(project_id: str):
         # Get all documents for the project
         documents = DocumentOperations.get_project_documents(db, project_id)
         
-        logger.info(f"Enqueueing {len(documents)} documents for parallel processing")
+        logger.info(f"[Project Worker {worker_id}] Enqueueing {len(documents)} documents for parallel processing")
+        
+        # Select queue based on mode
+        if use_hierarchical:
+            # Spawn dedicated document workers for this project
+            num_doc_workers = int(os.getenv("NUM_DOC_WORKERS_PER_PROJECT", "2"))
+            logger.info(f"[Project Worker {worker_id}] Spawning {num_doc_workers} document workers for project {project_id}")
+            
+            worker_manager = WorkerManager(REDIS_URL)
+            doc_workers = worker_manager.spawn_document_workers(
+                project_id=project_id,
+                num_workers=num_doc_workers,
+                worker_id_prefix=f"p{worker_id}"
+            )
+            
+            # Use project-specific queue for hierarchical processing
+            target_queue = get_queue_for_project(project_id, "documents")
+            logger.info(f"[Project Worker {worker_id}] Using hierarchical queue: {target_queue.name}")
+        else:
+            # Use global document queue for traditional parallel processing
+            target_queue = document_queue
+            logger.info(f"[Project Worker {worker_id}] Using global queue: {target_queue.name}")
         
         # Enqueue each document for parallel processing
         for document in documents:
@@ -824,7 +1022,7 @@ def process_project_parallel(project_id: str):
             )
             
             # Enqueue in RQ for processing
-            document_queue.enqueue(
+            target_queue.enqueue(
                 'app.api.worker_parallel.process_document',
                 args=(project_id, document.id),
                 job_timeout=1800,  # 30 minutes per document

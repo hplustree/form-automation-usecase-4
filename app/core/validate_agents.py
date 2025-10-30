@@ -94,29 +94,61 @@ class ConfidenceAgent:
     def _extract_text_from_content(self, content: any) -> str:
         """Extract plain text from potentially structured LLM response content."""
         try:
+            if content is None:
+                return ""
+                
             if isinstance(content, str):
-                logger.debug(f"Response content is string: {content[:100]}...")
+                # Try to parse as JSON first if it looks like JSON
+                content = content.strip()
+                if (content.startswith('{') and content.endswith('}')) or \
+                   (content.startswith('[') and content.endswith(']')):
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict):
+                            # Extract 'feedback' or 'answer' fields if present
+                            return parsed.get('feedback', parsed.get('answer', str(parsed)))
+                        return str(parsed)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, return as-is
+                        pass
+                logger.debug(f"Response content is string: {content[:200]}...")
                 return content
+                
             elif isinstance(content, list):
-                # Handle multi-part responses (e.g., [{"type": "text", "text": "..."}, "annotations": []])
                 text_parts = []
                 for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif 'feedback' in part:
+                            text_parts.append(part['feedback'])
+                        elif 'answer' in part:
+                            text_parts.append(part['answer'])
+                        elif 'content' in part:
+                            text_parts.append(part['content'])
                     elif isinstance(part, str):
                         text_parts.append(part)
                     else:
                         text_parts.append(str(part))
-                extracted = "".join(text_parts).strip()
-                logger.debug(f"Extracted text from list content: {extracted[:100]}...")
+                extracted = "\n".join(filter(None, text_parts)).strip()
+                logger.debug(f"Extracted text from list content: {extracted[:200]}...")
                 return extracted
-            else:
-                extracted = str(content).strip()
-                logger.debug(f"Fallback extraction from {type(content)}: {extracted[:100]}...")
-                return extracted
+                
+            elif isinstance(content, dict):
+                # Try to extract the most relevant fields
+                if 'feedback' in content:
+                    return str(content['feedback'])
+                if 'answer' in content:
+                    return str(content['answer'])
+                if 'content' in content:
+                    return str(content['content'])
+                return str(content)
+                
+            return str(content).strip()
+            
         except Exception as e:
-            logger.error(f"Failed to extract text from content: {str(e)}")
-            raise RuntimeError(f"Invalid response format: unable to extract text from {type(content)}") from e
+            logger.error(f"Failed to extract text from content: {str(e)}\nContent type: {type(content)}\nContent: {str(content)[:200]}")
+            return str(content) if content else ""
 
     def _create_confidence_prompt(self) -> PromptTemplate:
         """Create the confidence scoring prompt template"""
@@ -402,28 +434,61 @@ class ValidationAgent:
     def _extract_text_from_content(self, content: any) -> str:
         """Extract plain text from potentially structured LLM response content."""
         try:
+            if content is None:
+                return ""
+                
             if isinstance(content, str):
-                logger.debug(f"Response content is string: {content[:100]}...")
+                # Try to parse as JSON first if it looks like JSON
+                content = content.strip()
+                if (content.startswith('{') and content.endswith('}')) or \
+                   (content.startswith('[') and content.endswith(']')):
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict):
+                            # Extract 'feedback' or 'answer' fields if present
+                            return parsed.get('feedback', parsed.get('answer', str(parsed)))
+                        return str(parsed)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, return as-is
+                        pass
+                logger.debug(f"Response content is string: {content[:200]}...")
                 return content
+                
             elif isinstance(content, list):
                 text_parts = []
                 for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif 'feedback' in part:
+                            text_parts.append(part['feedback'])
+                        elif 'answer' in part:
+                            text_parts.append(part['answer'])
+                        elif 'content' in part:
+                            text_parts.append(part['content'])
                     elif isinstance(part, str):
                         text_parts.append(part)
                     else:
                         text_parts.append(str(part))
-                extracted = "".join(text_parts).strip()
-                logger.debug(f"Extracted text from list content: {extracted[:100]}...")
+                extracted = "\n".join(filter(None, text_parts)).strip()
+                logger.debug(f"Extracted text from list content: {extracted[:200]}...")
                 return extracted
-            else:
-                extracted = str(content).strip()
-                logger.debug(f"Fallback extraction from {type(content)}: {extracted[:100]}...")
-                return extracted
+                
+            elif isinstance(content, dict):
+                # Try to extract the most relevant fields
+                if 'feedback' in content:
+                    return str(content['feedback'])
+                if 'answer' in content:
+                    return str(content['answer'])
+                if 'content' in content:
+                    return str(content['content'])
+                return str(content)
+                
+            return str(content).strip()
+            
         except Exception as e:
-            logger.error(f"Failed to extract text from content: {str(e)}")
-            raise RuntimeError(f"Invalid response format: unable to extract text from {type(content)}") from e
+            logger.error(f"Failed to extract text from content: {str(e)}\nContent type: {type(content)}\nContent: {str(content)[:200]}")
+            return str(content) if content else ""
 
     def _create_validation_prompt(self) -> PromptTemplate:
         """Create the validation prompt template with emphasis on answer validation"""
@@ -712,28 +777,61 @@ class AnswerRefinementAgent:
     def _extract_text_from_content(self, content: any) -> str:
         """Extract plain text from potentially structured LLM response content."""
         try:
+            if content is None:
+                return ""
+                
             if isinstance(content, str):
-                logger.debug(f"Response content is string: {content[:100]}...")
+                # Try to parse as JSON first if it looks like JSON
+                content = content.strip()
+                if (content.startswith('{') and content.endswith('}')) or \
+                   (content.startswith('[') and content.endswith(']')):
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict):
+                            # Extract 'feedback' or 'answer' fields if present
+                            return parsed.get('feedback', parsed.get('answer', str(parsed)))
+                        return str(parsed)
+                    except json.JSONDecodeError:
+                        # If JSON parsing fails, return as-is
+                        pass
+                logger.debug(f"Response content is string: {content[:200]}...")
                 return content
+                
             elif isinstance(content, list):
                 text_parts = []
                 for part in content:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text_parts.append(part.get("text", ""))
+                    if isinstance(part, dict):
+                        if part.get("type") == "text":
+                            text_parts.append(part.get("text", ""))
+                        elif 'feedback' in part:
+                            text_parts.append(part['feedback'])
+                        elif 'answer' in part:
+                            text_parts.append(part['answer'])
+                        elif 'content' in part:
+                            text_parts.append(part['content'])
                     elif isinstance(part, str):
                         text_parts.append(part)
                     else:
                         text_parts.append(str(part))
-                extracted = "".join(text_parts).strip()
-                logger.debug(f"Extracted text from list content: {extracted[:100]}...")
+                extracted = "\n".join(filter(None, text_parts)).strip()
+                logger.debug(f"Extracted text from list content: {extracted[:200]}...")
                 return extracted
-            else:
-                extracted = str(content).strip()
-                logger.debug(f"Fallback extraction from {type(content)}: {extracted[:100]}...")
-                return extracted
+                
+            elif isinstance(content, dict):
+                # Try to extract the most relevant fields
+                if 'feedback' in content:
+                    return str(content['feedback'])
+                if 'answer' in content:
+                    return str(content['answer'])
+                if 'content' in content:
+                    return str(content['content'])
+                return str(content)
+                
+            return str(content).strip()
+            
         except Exception as e:
-            logger.error(f"Failed to extract text from content: {str(e)}")
-            raise RuntimeError(f"Invalid response format: unable to extract text from {type(content)}") from e
+            logger.error(f"Failed to extract text from content: {str(e)}\nContent type: {type(content)}\nContent: {str(content)[:200]}")
+            return str(content) if content else ""
 
     def _create_refinement_prompt(self) -> PromptTemplate:
         """Create the answer refinement prompt template"""
@@ -896,17 +994,60 @@ Return your response as a JSON object with this exact format:
             if not text_content:
                 raise RuntimeError("Empty text extracted from response content")
             
+            # First, try to parse as JSON
             try:
-                json.loads(text_content)
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Response is not valid JSON: {text_content[:100]}...") from e
+                parsed_json = json.loads(text_content)
+                logger.debug(f"Successfully parsed JSON response: {json.dumps(parsed_json, indent=2)[:500]}...")
+                
+                # If we have a dictionary, try to extract the fields directly
+                if isinstance(parsed_json, dict):
+                    verbatim_answer = parsed_json.get('verbatim_answer', '')
+                    explanation = parsed_json.get('explanation', '')
+                    
+                    # If we have valid fields, use them
+                    if verbatim_answer is not None:
+                        return {
+                            "verbatim_answer": str(verbatim_answer),
+                            "explanation": str(explanation) if explanation_needed and explanation else ""
+                        }
+                
+                # If direct extraction didn't work, try using the parser
+                try:
+                    parsed_response = self.parser.parse(text_content)
+                    logger.debug(f"Successfully parsed response using Pydantic: {parsed_response}")
+                    return {
+                        "verbatim_answer": parsed_response.verbatim_answer,
+                        "explanation": parsed_response.explanation if explanation_needed else ""
+                    }
+                except (ValueError, ValidationError) as parse_err:
+                    logger.warning(f"Pydantic parsing failed, using direct JSON fields: {str(parse_err)}")
+                    # Fall through to use the parsed JSON
             
-            parsed_response = self.parser.parse(text_content)
-            logger.debug(f"Refinement response: {parsed_response}")
+            except json.JSONDecodeError as json_err:
+                logger.warning(f"Failed to parse response as JSON: {str(json_err)}\nResponse: {text_content[:200]}...")
+                # Fall through to extract text directly
             
+            # If we get here, either JSON parsing failed or we couldn't extract the expected fields
+            # Try to extract a reasonable response from the text
+            logger.info("Attempting to extract answer directly from text response")
+            verbatim_answer = text_content.strip()
+            
+            # If the response is too long, it might contain both answer and explanation
+            if len(verbatim_answer) > 200 and '\n' in verbatim_answer:
+                parts = verbatim_answer.split('\n', 1)
+                verbatim_answer = parts[0].strip()
+                explanation = parts[1].strip() if explanation_needed else ""
+            else:
+                explanation = ""
+            
+            # Ensure we don't return None values
+            verbatim_answer = verbatim_answer or original_answer
+            explanation = explanation if explanation_needed else ""
+            
+            logger.info(f"Extracted answer from text (fallback): {verbatim_answer[:100]}...")
             return {
-                "verbatim_answer": parsed_response.verbatim_answer,
-                "explanation": parsed_response.explanation if explanation_needed else ""
+                "verbatim_answer": verbatim_answer,
+                "explanation": explanation
             }
             
         except (ValueError, ValidationError, json.JSONDecodeError, RuntimeError) as e:
@@ -943,17 +1084,60 @@ Return your response as a JSON object with this exact format:
             if not text_content:
                 raise RuntimeError("Empty text extracted from response content")
             
+            # First, try to parse as JSON
             try:
-                json.loads(text_content)
-            except json.JSONDecodeError as e:
-                raise RuntimeError(f"Response is not valid JSON: {text_content[:100]}...") from e
+                parsed_json = json.loads(text_content)
+                logger.debug(f"Successfully parsed no-chunks JSON response: {json.dumps(parsed_json, indent=2)[:500]}...")
+                
+                # If we have a dictionary, try to extract the fields directly
+                if isinstance(parsed_json, dict):
+                    verbatim_answer = parsed_json.get('verbatim_answer', '')
+                    explanation = parsed_json.get('explanation', '')
+                    
+                    # If we have valid fields, use them
+                    if verbatim_answer is not None:
+                        return {
+                            "verbatim_answer": str(verbatim_answer),
+                            "explanation": str(explanation) if explanation_needed and explanation else ""
+                        }
+                
+                # If direct extraction didn't work, try using the parser
+                try:
+                    parsed_response = self.parser.parse(text_content)
+                    logger.debug(f"Successfully parsed no-chunks response using Pydantic: {parsed_response}")
+                    return {
+                        "verbatim_answer": parsed_response.verbatim_answer,
+                        "explanation": parsed_response.explanation if explanation_needed else ""
+                    }
+                except (ValueError, ValidationError) as parse_err:
+                    logger.warning(f"Pydantic parsing failed in no-chunks, using direct JSON fields: {str(parse_err)}")
+                    # Fall through to use the parsed JSON
             
-            parsed_response = self.parser.parse(text_content)
-            logger.debug(f"No-chunks refinement response: {parsed_response}")
+            except json.JSONDecodeError as json_err:
+                logger.warning(f"Failed to parse no-chunks response as JSON: {str(json_err)}\nResponse: {text_content[:200]}...")
+                # Fall through to extract text directly
             
+            # If we get here, either JSON parsing failed or we couldn't extract the expected fields
+            # Try to extract a reasonable response from the text
+            logger.info("Attempting to extract answer directly from no-chunks text response")
+            verbatim_answer = text_content.strip()
+            
+            # If the response is too long, it might contain both answer and explanation
+            if len(verbatim_answer) > 200 and '\n' in verbatim_answer:
+                parts = verbatim_answer.split('\n', 1)
+                verbatim_answer = parts[0].strip()
+                explanation = parts[1].strip() if explanation_needed else ""
+            else:
+                explanation = ""
+            
+            # Ensure we don't return None values
+            verbatim_answer = verbatim_answer or original_answer
+            explanation = explanation if explanation_needed else ""
+            
+            logger.info(f"Extracted answer from no-chunks text (fallback): {verbatim_answer[:100]}...")
             return {
-                "verbatim_answer": parsed_response.verbatim_answer,
-                "explanation": parsed_response.explanation if explanation_needed else ""
+                "verbatim_answer": verbatim_answer,
+                "explanation": explanation
             }
             
         except (ValueError, ValidationError, json.JSONDecodeError, RuntimeError) as e:

@@ -503,23 +503,38 @@ class LLMService:
         # Apply softmax normalization per document
         top_pages = []
         selected_scores = {}
-        
+        logger.info(f"Page selection - ++++++++++++++++++++++pages_by_doc: {pages_by_doc}")
         for doc_id, doc_page_scores in pages_by_doc.items():
             # Normalize scores for this document
             normalized_doc_scores = softmax_normalize_scores(doc_page_scores)
-            
+            logger.info(f"Page selection - ++++++++++++++++++++++normalized_doc_scores: {normalized_doc_scores}")
             # Filter pages with score >= 0.5 for this document
             qualified_pages = {k: v for k, v in normalized_doc_scores.items() if v >= 0.5}
-            
+            logger.info(f"Page selection - ++++++++++++++++++++++qualified_pages: {qualified_pages}")
             if qualified_pages:
+                # Log raw page scores before cutoff (sorted by score descending)
+                sorted_qualified = sorted(qualified_pages.items(), key=lambda x: x, reverse=True)
+                logger.info(f"\nPage selection - doc_id={doc_id}:")
+                logger.info(f"Raw page scores ({len(sorted_qualified)} pages with score >= 0.5):")
+                for i, (page_key, score) in enumerate(sorted_qualified):
+                    logger.info(f"  Page {page_key}: {score:.4f}")
+
                 # Apply cutoff logic to qualified pages
                 doc_top_pages = cutoff_first_big_gap_normalized(
                     qualified_pages, 
-                    threshold=0.05, 
+                    threshold=0.20,  # Increased from 0.05 to allow more pages with smaller gaps
                     min_results=2, 
-                    max_results=3,
+                    max_results=3,   # Maximum 3 pages
                     min_score_threshold=0.5
                 )
+                
+                # Log selected pages after cutoff
+                logger.info(f"\nSelected pages after cutoff (threshold=0.20, min=2, max=3):")
+                for i, page_key in enumerate(doc_top_pages):
+                    score = normalized_doc_scores.get(page_key, 0.0)
+                    logger.info(f"  Selected page {i+1}: {page_key} (score: {score:.4f})")
+                logger.info(f"Final selection: {len(doc_top_pages)} pages")
+                logger.info("")  # Add spacing for readability
                 
                 top_pages.extend(doc_top_pages)
                 selected_scores.update({k: normalized_doc_scores[k] for k in doc_top_pages})
@@ -710,9 +725,9 @@ class LLMService:
                 # Apply cutoff logic to qualified pages
                 doc_top_pages = cutoff_first_big_gap_normalized(
                     qualified_pages, 
-                    threshold=0.05, 
+                    threshold=0.15,  # Increased from 0.05 to allow more pages with smaller gaps
                     min_results=2, 
-                    max_results=3,
+                    max_results=5,   # Increased from 3 to allow more relevant pages
                     min_score_threshold=0.5
                 )
                 

@@ -12,7 +12,7 @@
       "type": "llm",
       "prompt": "Provide a brief overview of the company, including its founding year and core business. For example: 'the company is a leading provider of [enter value here]' or 'the company develops [enter value here]'. Continue with: 'It is the largest global player in [Z]' if applicable. Keep the summary under 100 words.",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -23,7 +23,7 @@
       "type": "llm",
       "prompt": "Please describe the company's products and services. Provide detailed description on each of the key products/services. Include headline figures if available (e.g., market share, number of units, client coverage). Please provide summary not exceeding 100 words. ",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -67,7 +67,7 @@
       "type": "llm",
       "prompt": "Please provide background on the management team. Keep it high level executive summary.Summarize in 2-3 lines.",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -89,7 +89,7 @@
       "type": "llm",
       "prompt": "If the document category \"geographic footprint matrix\" exists, please respond with \"Please refer to geographic footprint matrix\", otherwise please summarise the total number of locations and countries, where it has a physical presence and also where it operates or genertes revenues - if more than 10 only summarize the key countries or territories (do not list them all!).  What is the revenue split and ebitda split by geography where such data is available? Is the company active in, or does it operate within, any high risk jurisdiction such as those sanctioned by OFAC or the Council of the European Union? Limit your answer to 100 words in total. ",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -111,7 +111,7 @@
       "type": "llm",
       "prompt": "Summarize the information provided on intellectual property (IP), including (if available) its whether it is owned or licensed and number of active patents. Limit the summary to a maximum of 70 words.",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -120,9 +120,9 @@
       "code": "mna_activity",
       "label": "M&A Activity",
       "type": "llm",
-      "prompt": "Please comment on the company's historic M&A activity.  If there is a notable transaction please mention. If information is available, What has been the company's growth model: organic, buy and build, or a combination of both? Please provide summary not exceeding 70 words.",
+      "prompt": "Please comment on the company's historic M&A (Mergers and Acquisitions) activity.  If there is a notable transaction please mention. If information is available, What has been the company's growth model: organic, buy and build, or a combination of both? Please provide summary not exceeding 70 words.",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -144,7 +144,7 @@
       "type": "llm",
       "prompt": "Please comment on the cashflow position of the company. Mention 2022, 2023, 2024 an 2025 Free cash flow (FCF) and cashflow margins, etc. based on what's mentioned in the document and what is available. Please mention the corresponding years (alongside the numeric data) where applicable. Please summarize in not more than 100 words.",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true
@@ -155,7 +155,7 @@
       "type": "llm",
       "prompt": "Is the transaction structured as a 100% sale, majority sale, or minority sale? Does it involve a rollover? Is it a deal structured as a share or asset deal? If rollover, please mention Seller shareholding percentage in the new structure, if available. Summarize in not more than 50 words. ",
       "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
+      "model": "gpt-5",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": true

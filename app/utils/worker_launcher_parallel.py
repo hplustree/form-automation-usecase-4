@@ -15,19 +15,37 @@ from app.logging_config import logger
 
 
 def main():
-    try:
-        # Configuration for different worker types
-        num_doc_workers = int(os.getenv("NUM_DOC_WORKERS", "3"))
-        num_field_workers = int(os.getenv("NUM_FIELD_WORKERS", "5"))
-        num_project_workers = int(os.getenv("NUM_PROJECT_WORKERS", "1"))
-    except ValueError:
-        num_doc_workers = 3
-        num_field_workers = 5
-        num_project_workers = 1
+    # Check if hierarchical mode is enabled
+    use_hierarchical = os.getenv("USE_HIERARCHICAL_WORKERS", "false").lower() == "true"
+    
+    if use_hierarchical:
+        # Hierarchical mode: workers are spawned dynamically
+        try:
+            num_project_workers = int(os.getenv("NUM_PROJECT_WORKERS", "1"))
+            num_doc_workers_per_project = int(os.getenv("NUM_DOC_WORKERS_PER_PROJECT", "2"))
+            num_field_workers_per_doc = int(os.getenv("NUM_FIELD_WORKERS_PER_DOC", "5"))
+        except ValueError:
+            num_project_workers = 1
+            num_doc_workers_per_project = 2
+            num_field_workers_per_doc = 5
+        
+        msg = (f"Starting HIERARCHICAL workers: {num_project_workers} project workers, "
+               f"{num_doc_workers_per_project} doc workers per project, "
+               f"{num_field_workers_per_doc} field workers per doc")
+    else:
+        # Traditional parallel mode: fixed worker pools
+        try:
+            num_doc_workers = int(os.getenv("NUM_DOC_WORKERS", "3"))
+            num_field_workers = int(os.getenv("NUM_FIELD_WORKERS", "5"))
+            num_project_workers = int(os.getenv("NUM_PROJECT_WORKERS", "1"))
+        except ValueError:
+            num_doc_workers = 3
+            num_field_workers = 5
+            num_project_workers = 1
+        
+        msg = f"Starting PARALLEL workers: {num_doc_workers} document, {num_field_workers} field, {num_project_workers} project workers"
     
     redis_url = os.getenv("REDIS_URL", "redis://redis:6379/0")
-    
-    msg = f"Starting parallel workers: {num_doc_workers} document, {num_field_workers} field, {num_project_workers} project workers"
     print(msg, flush=True)
     logger.info(msg)
     
@@ -53,42 +71,68 @@ def main():
     signal.signal(signal.SIGTERM, terminate_all)
     signal.signal(signal.SIGINT, terminate_all)
     
-    # Launch document processing workers
-    for i in range(1, num_doc_workers + 1):
-        start_msg = f"Launching document worker {i}"
-        print(start_msg, flush=True)
-        logger.info(start_msg)
-        p = subprocess.Popen([
-            "rq", "worker", "documents",
-            "--url", redis_url,
-            "--name", f"doc-worker-{i}"
-        ])
-        procs.append(p)
-    
-    # Launch field extraction workers
-    for i in range(1, num_field_workers + 1):
-        start_msg = f"Launching field worker {i}"
-        print(start_msg, flush=True)
-        logger.info(start_msg)
-        p = subprocess.Popen([
-            "rq", "worker", "fields",
-            "--url", redis_url,
-            "--name", f"field-worker-{i}"
-        ])
-        procs.append(p)
-    
-    # Launch project coordination workers
-    for i in range(1, num_project_workers + 1):
-        start_msg = f"Launching project worker {i}"
-        print(start_msg, flush=True)
-        logger.info(start_msg)
-        p = subprocess.Popen([
-            "rq", "worker", "projects",
-            "--url", redis_url,
-            "--name", f"project-worker-{i}",
-            "--with-scheduler"
-        ])
-        procs.append(p)
+    if use_hierarchical:
+        # HIERARCHICAL MODE: Only launch project workers
+        # Document and field workers will be spawned dynamically by their parents
+        for i in range(1, num_project_workers + 1):
+            start_msg = f"Launching project worker {i} (hierarchical mode)"
+            print(start_msg, flush=True)
+            logger.info(start_msg)
+            
+            # Project workers listen to multiple queues to handle dynamic project-specific queues
+            # They will spawn document workers which will spawn field workers
+            p = subprocess.Popen([
+                "rq", "worker", "projects",
+                "--url", redis_url,
+                "--name", f"project-worker-{i}",
+                "--with-scheduler"
+            ], env={
+                **os.environ,
+                "USE_HIERARCHICAL_WORKERS": "true",
+                "NUM_DOC_WORKERS_PER_PROJECT": str(num_doc_workers_per_project),
+                "NUM_FIELD_WORKERS_PER_DOC": str(num_field_workers_per_doc),
+                "WORKER_TYPE": "project",
+                "WORKER_ID": str(i)
+            })
+            procs.append(p)
+    else:
+        # TRADITIONAL PARALLEL MODE: Launch fixed worker pools
+        # Launch document processing workers
+        for i in range(1, num_doc_workers + 1):
+            start_msg = f"Launching document worker {i}"
+            print(start_msg, flush=True)
+            logger.info(start_msg)
+            p = subprocess.Popen([
+                "rq", "worker", "documents",
+                "--url", redis_url,
+                "--name", f"doc-worker-{i}"
+            ])
+            procs.append(p)
+        
+        # Launch field extraction workers
+        for i in range(1, num_field_workers + 1):
+            start_msg = f"Launching field worker {i}"
+            print(start_msg, flush=True)
+            logger.info(start_msg)
+            p = subprocess.Popen([
+                "rq", "worker", "fields",
+                "--url", redis_url,
+                "--name", f"field-worker-{i}"
+            ])
+            procs.append(p)
+        
+        # Launch project coordination workers
+        for i in range(1, num_project_workers + 1):
+            start_msg = f"Launching project worker {i}"
+            print(start_msg, flush=True)
+            logger.info(start_msg)
+            p = subprocess.Popen([
+                "rq", "worker", "projects",
+                "--url", redis_url,
+                "--name", f"project-worker-{i}",
+                "--with-scheduler"
+            ])
+            procs.append(p)
     
     # Wait for any to exit; if one exits, keep waiting for the rest
     exit_code = 0
