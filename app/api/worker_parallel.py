@@ -162,6 +162,7 @@ def process_document(
     document_id: str,
     is_regeneration: bool = False,
     field_names: list = None,
+    custom_prompts: dict = None,
     **kwargs
 ):
     """
@@ -172,6 +173,7 @@ def process_document(
         document_id: The ID of the document to process
         is_regeneration: Whether this is a regeneration of an existing document
         field_names: Optional list of field names to process (if None, all fields will be processed)
+        custom_prompts: Optional dictionary of custom prompts to override JSON config {field_name: {prompt, type_of_prompt, explanation_needed}}
         **kwargs: Additional arguments (e.g., timeout from RQ)
     """
     import time
@@ -450,6 +452,23 @@ def process_document(
                 field_name = field_config["field_name"]
                 field_type = field_config.get('type', 'unknown')
                 field_model = field_config.get('model', 'default')
+                
+                # Override field config with custom prompts if provided
+                if custom_prompts and field_name in custom_prompts:
+                    custom_prompt_data = custom_prompts[field_name]
+                    if custom_prompt_data.get('prompt'):
+                        field_config['prompt'] = custom_prompt_data['prompt']
+                        logger.info(f"[Worker {worker_id}] Using custom prompt for field '{field_name}'")
+                    if custom_prompt_data.get('type_of_prompt'):
+                        field_config['typeOfPrompt'] = custom_prompt_data['type_of_prompt']
+                        field_config['prompt_type'] = custom_prompt_data['type_of_prompt']
+                    if custom_prompt_data.get('explanation_needed') is not None:
+                        field_config['explanationNeeded'] = custom_prompt_data['explanation_needed']
+                        field_config['explanation_needed'] = custom_prompt_data['explanation_needed']
+                    if custom_prompt_data.get('model'):
+                        field_config['model'] = custom_prompt_data['model']
+                        logger.info(f"[Worker {worker_id}] Using custom model '{custom_prompt_data['model']}' for field '{field_name}'")
+                
                 logger.info(f"[Worker {worker_id}] Enqueuing field extraction for '{field_name}' (Type: {field_type}, Model: {field_model})")
                 
                 # Log field configuration (safely, without sensitive info)
@@ -572,7 +591,20 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
         llm_service = services["llm_service"]
         
         prompt = field_config["prompt"]
-        prompt_type = field_config.get("type", "verbatim")
+        prompt_type = (
+            field_config.get("typeOfPrompt")
+            or field_config.get("prompt_type")
+            or field_config.get("type", "verbatim")
+        )
+        explanation_needed = field_config.get(
+            "explanationNeeded",
+            field_config.get("explanation_needed", True)
+        )
+
+        logger.debug(
+            f"[Worker {worker_id}] Prompt for '{field_name}' (type={prompt_type}, explanation_needed={explanation_needed}): "
+            f"{prompt[:200]}{'...' if len(prompt) > 200 else ''}"
+        )
         
         try:
             # Generate query embedding
@@ -633,7 +665,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     context_chunks,
                     context_pages,
                     project_id,
-                    explanation_needed=True,
+                    explanation_needed=explanation_needed,
                     prompt_type=prompt_type,
                 )
                 
@@ -668,7 +700,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                         user_query=prompt,
                         initial_answer=initial_answer,
                         initial_explanation=initial_explanation,
-                        explanation_needed=True,
+                        explanation_needed=explanation_needed,
                         prompt_type=prompt_type,
                         chunks=context_chunks,
                         pages=context_pages,

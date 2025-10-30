@@ -6,7 +6,7 @@ import uuid
 from pathlib import Path
 from typing import List, Optional, Dict, Any, Union
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, Path as FastAPIPath, Query, Body
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator, ConfigDict, validator
 import redis as rqredis
 from rq import Queue, get_current_job
 from datetime import datetime
@@ -31,6 +31,20 @@ field_queue = Queue("fields", connection=sync_redis)
 
 # Create the router
 project_router = APIRouter()
+
+# Pydantic models for regenerate API
+class FieldPromptOverride(BaseModel):
+    """Model for overriding field prompts during regeneration"""
+    field_name: str = Field(..., description="Name of the field")
+    prompt: Optional[str] = Field(None, description="Custom prompt to use instead of the default from JSON config")
+    type_of_prompt: Optional[str] = Field(None, description="Type of prompt: 'verbatim' or 'summarize'")
+    explanation_needed: Optional[bool] = Field(None, description="Whether explanation is needed")
+    model: Optional[str] = Field(None, description="LLM model identifier to use for this field (e.g., 'gpt-5')")
+    
+class RegenerateDocumentRequest(BaseModel):
+    """Request model for document regeneration with optional custom prompts"""
+    field_names: Optional[List[str]] = Field(None, description="List of field names to regenerate (leave empty for all fields)")
+    field_prompts: Optional[List[FieldPromptOverride]] = Field(None, description="Custom prompts for specific fields")
 
 @project_router.get("/get-templates", response_model=List[Dict[str, Any]])
 async def get_templates() -> List[Dict[str, Any]]:
@@ -1054,13 +1068,30 @@ async def add_documents_to_project(
 async def regenerate_document(
     project_id: str = FastAPIPath(..., description="ID of the project"),
     document_id: str = FastAPIPath(..., description="ID of the document to regenerate"),
-    field_names: str = Query("", description="Comma-separated list of field names to regenerate (leave empty for all fields)"),
+    request_body: Optional[RegenerateDocumentRequest] = Body(None),
+    field_names: str = Query("", description="Comma-separated list of field names to regenerate (leave empty for all fields, deprecated: use request body instead)"),
     db: Session = Depends(get_db)
 ):
     """
     Regenerate a specific document in a project.
     This will clear existing field extractions and reprocess the document.
-    If field_names is provided, only those fields will be regenerated.
+    
+    You can provide:
+    - field_names: List of field names to regenerate (in request body or query param)
+    - field_prompts: Custom prompts for specific fields (overrides JSON config)
+    
+    Example request body:
+    {
+        "field_names": ["business_model", "mna_activity"],
+        "field_prompts": [
+            {
+                "field_name": "mna_activity",
+                "prompt": "Custom prompt here",
+                "type_of_prompt": "summarize",
+                "explanation_needed": true
+            }
+        ]
+    }
     """
     # Get the project and document
     project = ProjectOperations.get_project(db, project_id)
@@ -1075,10 +1106,23 @@ async def regenerate_document(
     if not document:
         raise HTTPException(status_code=404, detail=f"Document {document_id} not found in project {project_id}")
     
-    # Parse field names if provided
+    # Parse field names if provided (from body or query param)
     fields_to_regenerate = []
-    if field_names:
+    if request_body and request_body.field_names:
+        fields_to_regenerate = request_body.field_names
+    elif field_names:
         fields_to_regenerate = [f.strip() for f in field_names.split(",") if f.strip()]
+    
+    # Extract custom prompts if provided
+    custom_prompts = {}
+    if request_body and request_body.field_prompts:
+        for field_prompt in request_body.field_prompts:
+            custom_prompts[field_prompt.field_name] = {
+                "prompt": field_prompt.prompt,
+                "type_of_prompt": field_prompt.type_of_prompt,
+                "explanation_needed": field_prompt.explanation_needed,
+                "model": field_prompt.model
+            }
     
     # Clear existing field results (filtered if field names provided)
     field_result_query = db.query(FieldResult).filter(FieldResult.document_id == document_id)
@@ -1117,6 +1161,10 @@ async def regenerate_document(
         if fields_to_regenerate:
             job_kwargs["field_names"] = fields_to_regenerate
         
+        # Add custom prompts to job kwargs if specified
+        if custom_prompts:
+            job_kwargs["custom_prompts"] = custom_prompts
+        
         # Enqueue for reprocessing
         job = document_queue.enqueue(process_document, **job_kwargs)
         
@@ -1126,7 +1174,8 @@ async def regenerate_document(
             "job_id": job.id,
             "document_id": document_id,
             "project_id": project_id,
-            "fields_to_regenerate": fields_to_regenerate if fields_to_regenerate else "all"
+            "fields_to_regenerate": fields_to_regenerate if fields_to_regenerate else "all",
+            "custom_prompts": list(custom_prompts.keys()) if custom_prompts else []
         }
     except Exception as e:
         document.status = "failed"
