@@ -29,8 +29,12 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
-  Snackbar
+  Snackbar,
+  Checkbox,
+  FormGroup,
+  FormControlLabel
 } from "@mui/material";
+
 import {
   Description as DescriptionIcon,
   UploadOutlined,
@@ -206,6 +210,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   });
   const [addDocumentOpen, setAddDocumentOpen] = useState(false);
   const [regenerating, setRegenerating] = useState({});
+  const [viewFieldsOpen, setViewFieldsOpen] = useState(false);
+  const [tempSelectedFields, setTempSelectedFields] = useState([]);
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
@@ -775,6 +781,47 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
   };
 
+  // View fields selection dialog handlers
+  const getAllAvailableFields = () => {
+    const headersFromResults = extractTableHeaders(extractionResults);
+    const union = new Set([...(headersFromResults || []), ...(tableHeaders || [])]);
+    return Array.from(union).sort();
+  };
+
+  const openViewFields = () => {
+    setTempSelectedFields([...(tableHeaders || [])]);
+    setViewFieldsOpen(true);
+  };
+
+  const toggleTempField = (field) => {
+    setTempSelectedFields((prev) => {
+      const set = new Set(prev);
+      if (set.has(field)) set.delete(field);
+      else set.add(field);
+      return Array.from(set);
+    });
+  };
+
+  const applyViewFields = () => {
+    const selected = Array.isArray(tempSelectedFields) ? tempSelectedFields : [];
+    setTableHeaders(selected);
+    try {
+      if (selectedProjectId) {
+        const map = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+        map[selectedProjectId] = selected;
+        sessionStorage.setItem('project_fields_map', JSON.stringify(map));
+      }
+      if (selectedProject?.name) {
+        const byName = JSON.parse(sessionStorage.getItem('project_fields_map_by_name')) || {};
+        byName[selectedProject.name] = selected;
+        sessionStorage.setItem('project_fields_map_by_name', JSON.stringify(byName));
+      }
+    } catch (e) {
+      console.warn('Failed to persist selected fields', e);
+    }
+    setViewFieldsOpen(false);
+  };
+
   if (!selectedProject) {
     return (
       <Box
@@ -981,6 +1028,21 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                     }}
                   >
                     Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<VisibilityOutlinedIcon />}
+                    onClick={openViewFields}
+                    disabled={extractionResults.length === 0}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    View
                   </Button>
                   <Button
                     variant="outlined"
@@ -1201,6 +1263,40 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           )}
         </Box>
       </TabPanel>
+
+      {/* Explanation Dialog */}
+      <Dialog
+        open={viewFieldsOpen}
+        onClose={() => setViewFieldsOpen(false)}
+        aria-labelledby="view-fields-dialog-title"
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle id="view-fields-dialog-title">Select fields to view</DialogTitle>
+        <DialogContent dividers>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+            Choose which fields should be visible in the results table.
+          </Typography>
+          <FormGroup>
+            {getAllAvailableFields().map((field) => (
+              <FormControlLabel
+                key={field}
+                control={
+                  <Checkbox
+                    checked={tempSelectedFields.includes(field)}
+                    onChange={() => toggleTempField(field)}
+                  />
+                }
+                label={formatFieldName(field)}
+              />
+            ))}
+          </FormGroup>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setViewFieldsOpen(false)} color="inherit">Cancel</Button>
+          <Button onClick={applyViewFields} variant="contained" disabled={tempSelectedFields.length === 0}>Apply</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Explanation Dialog */}
       <Dialog
