@@ -219,9 +219,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [exportMode, setExportMode] = useState(null); // 'excel' | 'word'
   const [tempExportDocs, setTempExportDocs] = useState([]);
   const [fieldRegenerating, setFieldRegenerating] = useState({});
-  const [regenPromptDialog, setRegenPromptDialog] = useState({ open: false, docId: null, fieldName: null, prompt: '', loading: false, error: '' });
+  const [regenPromptDialog, setRegenPromptDialog] = useState({ open: false, docId: null, fieldName: null, prompt: '', typeOfPrompt: '', explanationNeeded: false, loading: false, error: '' });
+  const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [docOrder, setDocOrder] = useState([]); 
 
-  // Handler for adding documents
   const handleAddDocument = (files) => {
     setToast({
       open: true,
@@ -232,7 +233,80 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     getProjectStatus();
   };
 
-  // Read template code for this project from sessionStorage
+  useEffect(() => {
+    const ids = (extractionResults || []).map(d => d.doc_id || d.id).filter(Boolean);
+    if (!ids.length) { setDocOrder([]); return; }
+    setDocOrder((prev) => {
+      if (!prev || prev.length === 0) return ids;
+      const prevSet = new Set(prev);
+      const keepPrev = prev.filter(id => ids.includes(id));
+      const appendNew = ids.filter(id => !prevSet.has(id));
+      return [...keepPrev, ...appendNew];
+    });
+  }, [extractionResults]);
+
+  const handleRegenerateAll = async () => {
+    if (!selectedProjectId) return;
+    setRegeneratingAll(true);
+
+    let fieldNames = [];
+    try {
+      const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+      if (Array.isArray(fieldsMap[selectedProjectId])) fieldNames = fieldsMap[selectedProjectId];
+    } catch (e) {
+      console.warn('Failed to load project fields from sessionStorage', e);
+    }
+
+    let fieldPrompts = [];
+    try {
+      const templateCode = getTemplateCodeForProject();
+      if (templateCode) {
+        const res = await getTemplates(templateCode);
+        const fields = Array.isArray(res?.fields) ? res.fields : [];
+        const byCode = new Map(fields.map(f => [f.code, f]));
+        fieldPrompts = (fieldNames || []).map(name => {
+          const cfg = byCode.get(name) || {};
+          return {
+            field_name: name,
+            prompt: cfg.prompt || '',
+            type_of_prompt: cfg.typeOfPrompt || undefined,
+            explanation_needed: typeof cfg.explanationNeeded === 'boolean' ? cfg.explanationNeeded : undefined,
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to load template prompts for regenerate all', e);
+    }
+
+    // Determine doc IDs from status list, fallback to extraction results
+    const docIds = (docStatus && docStatus.length
+      ? docStatus.map(d => d.doc_id || d.id)
+      : (extractionResults || []).map(d => d.doc_id || d.id)
+    ).filter(Boolean);
+
+    // Optimistically set all to processing
+    setStatusByDoc(prev => {
+      const next = { ...prev };
+      docIds.forEach(id => { next[id] = 'processing'; });
+      return next;
+    });
+    setDocStatus(prev => prev.map(d => (docIds.includes(d.doc_id || d.id)) ? { ...d, status: 'processing', progress: 0 } : d));
+
+    try {
+      const body = { field_names: fieldNames };
+      if (Array.isArray(fieldPrompts) && fieldPrompts.some(fp => fp.prompt)) {
+        body.field_prompts = fieldPrompts;
+      }
+      await Promise.all(docIds.map(id => regenerateDocument(selectedProjectId, id, body)));
+      setToast({ open: true, message: `Regeneration requested for ${docIds.length} document(s)`, severity: 'success' });
+    } catch (e) {
+      console.error('Failed to request regeneration for all documents', e);
+      setToast({ open: true, message: 'Failed to request regeneration for all documents', severity: 'error' });
+    } finally {
+      setRegeneratingAll(false);
+    }
+  };
+
   const getTemplateCodeForProject = () => {
     try {
       let code = '';
@@ -262,16 +336,22 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   const openRegenPromptDialog = async (docId, fieldName) => {
     const templateCode = getTemplateCodeForProject();
-    setRegenPromptDialog(prev => ({ ...prev, open: true, docId, fieldName, loading: true, error: '', prompt: '' }));
+    setRegenPromptDialog(prev => ({ ...prev, open: true, docId, fieldName, loading: true, error: '', prompt: '', typeOfPrompt: '', explanationNeeded: false }));
     try {
       let promptText = '';
+      let typeOfPrompt = '';
+      let explanationNeeded = false;
       if (templateCode) {
         const res = await getTemplates(templateCode);
         const fields = Array.isArray(res?.fields) ? res.fields : [];
         const match = fields.find(f => f.code === fieldName);
-        if (match && match.prompt) promptText = match.prompt;
+        if (match) {
+          if (match.prompt) promptText = match.prompt;
+          if (match.typeOfPrompt) typeOfPrompt = match.typeOfPrompt;
+          if (typeof match.explanationNeeded === 'boolean') explanationNeeded = match.explanationNeeded;
+        }
       }
-      setRegenPromptDialog(prev => ({ ...prev, loading: false, prompt: promptText }));
+      setRegenPromptDialog(prev => ({ ...prev, loading: false, prompt: promptText, typeOfPrompt, explanationNeeded }));
     } catch (e) {
       console.error('Failed to fetch template prompt', e);
       setRegenPromptDialog(prev => ({ ...prev, loading: false, error: 'Failed to load prompt' }));
@@ -279,11 +359,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   };
 
   const closeRegenPromptDialog = () => {
-    setRegenPromptDialog({ open: false, docId: null, fieldName: null, prompt: '', loading: false, error: '' });
+    setRegenPromptDialog({ open: false, docId: null, fieldName: null, prompt: '', typeOfPrompt: '', explanationNeeded: false, loading: false, error: '' });
   };
 
   const submitRegenWithPrompt = async () => {
-    const { docId, fieldName, prompt } = regenPromptDialog;
+    const { docId, fieldName, prompt, typeOfPrompt, explanationNeeded } = regenPromptDialog;
     if (!selectedProjectId || !docId || !fieldName) return;
     const key = `${docId}||${fieldName}`;
     setFieldRegenerating(prev => ({ ...prev, [key]: true }));
@@ -292,7 +372,18 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
     closeRegenPromptDialog();
     try {
-      await regenerateDocument(selectedProjectId, docId, [fieldName], { prompt });
+      const body = {
+        field_names: [fieldName],
+        field_prompts: [
+          {
+            field_name: fieldName,
+            prompt: prompt || '',
+            type_of_prompt: "summarize",
+            explanation_needed: true,
+          },
+        ],
+      };
+      await regenerateDocument(selectedProjectId, docId, body);
       setToast({ open: true, message: `Regeneration requested for ${formatFieldName(fieldName)}`, severity: 'success' });
     } catch (e) {
       console.error('Failed to request field regeneration', e);
@@ -410,10 +501,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const getProjectStatus = async () => {
     try {
       const result = await getProjectDetails(selectedProjectId);
-      // Expecting shape { project_id, ..., documents: [ { doc_id, doc_name, status, ... } ] }
       const docs = Array.isArray(result?.documents) ? result.documents : [];
 
-      // Normalize and prevent status downgrade
       const rank = { pending: 0, processing: 1, completed: 2 };
       const merged = docs.map((d) => {
         const id = d.doc_id || d.id;
@@ -526,6 +615,15 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           const headersFromBackend = extractTableHeaders(resultsArray);
           if (headersFromBackend.length) setTableHeaders(headersFromBackend);
         }
+        // Update stable document order: preserve previous order and append new ids
+        const incomingIds = resultsArray.map(r => r.doc_id || r.id).filter(Boolean);
+        setDocOrder((prev) => {
+          if (!prev || prev.length === 0) return incomingIds;
+          const prevSet = new Set(prev);
+          const keepPrev = prev.filter(id => incomingIds.includes(id));
+          const appendNew = incomingIds.filter(id => !prevSet.has(id));
+          return [...keepPrev, ...appendNew];
+        });
       } else {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
@@ -1007,8 +1105,12 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   };
 
   const getVisibleDocs = () => {
-    const idsSet = new Set(selectedDocIds && selectedDocIds.length ? selectedDocIds : (extractionResults || []).map(d => d.doc_id || d.id));
-    return (extractionResults || []).filter(d => idsSet.has(d.doc_id || d.id));
+    const allDocs = extractionResults || [];
+    const byId = new Map(allDocs.map(d => [d.doc_id || d.id, d]));
+    const defaultOrder = allDocs.map(d => d.doc_id || d.id).filter(Boolean);
+    const order = (docOrder && docOrder.length) ? docOrder : defaultOrder;
+    const idsSet = new Set(selectedDocIds && selectedDocIds.length ? selectedDocIds : defaultOrder);
+    return order.filter(id => idsSet.has(id)).map(id => byId.get(id)).filter(Boolean);
   };
 
   if (!selectedProject) {
@@ -1217,6 +1319,21 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                     }}
                   >
                     Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<AutorenewIcon />}
+                    onClick={handleRegenerateAll}
+                    disabled={extractionResults.length === 0 || regeneratingAll}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    {regeneratingAll ? 'Regenerating...' : 'Regenerate All'}
                   </Button>
                   <Button
                     variant="outlined"
@@ -1560,6 +1677,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                 value={regenPromptDialog.prompt}
                 onChange={(e) => setRegenPromptDialog(prev => ({ ...prev, prompt: e.target.value }))}
               />
+              
             </>
           )}
         </DialogContent>
