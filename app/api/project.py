@@ -18,7 +18,7 @@ from app.logging_config import logger
 from app.db.database import get_db
 from app.db.operations import ProjectOperations, DocumentOperations, FieldResultOperations, QueueOperations, DocumentQueueOperations, FieldQueueOperations
 from app.api.worker_parallel import process_document
-from app.db.models import Project, Document, DocumentQueue, FieldQueue, FieldResult
+from app.db.models import Project, Document, DocumentQueue, FieldQueue, FieldResult, ProcessingQueue
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 QUEUE_NAME = os.getenv("QUEUE_NAME", "projects")
@@ -567,9 +567,10 @@ class ProjectStatusResponse(BaseModel):
 class TemplateProcessResponse(BaseModel):
     success: bool
     message: str
-    fields: Dict[str, str]  # key = code, value = label
+    fields: List[Dict[str, Any]]  # preserve full field context
     total_fields: int
     suggestion: Optional[str] = None  
+ 
 
 
 
@@ -762,6 +763,7 @@ async def submit_project(
         )
         
         # Enqueue project for parallel processing
+        # With the new architecture, we enqueue to the projects queue for RQ worker to pick up
         job = project_queue.enqueue(
             'app.api.worker_parallel.process_project_parallel',
             args=(project_id,),
@@ -925,43 +927,112 @@ async def get_project_results(project_id: str, db: Session = Depends(get_db)):
 
 @project_router.delete("/{project_id}")
 async def delete_project(project_id: str, db: Session = Depends(get_db)):
-    """Delete a project and its data"""
+    """Delete a project and all related resources across storage backends."""
+    from app.core.weaviate_client import WeaviateClient  # Local import to avoid circular deps at module load
+    from app.utils.file_handler import DocumentLoader
+
     try:
-        # Try to get from PostgreSQL first
-        db_project = ProjectOperations.get_project(db, project_id)
-        
-        if db_project:
-            temp_dir = db_project.temp_dir
-            # Delete from PostgreSQL (cascades to documents and field_results)
-            ProjectOperations.delete_project(db, project_id)
-        else:
-            # Fallback to Redis
+        logger.info(f"Deleting project {project_id}")
+
+        # Load project from DB
+        project = ProjectOperations.get_project(db, project_id)
+        if not project:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
+
+        # Collect document IDs for cleanup before delete cascades trigger
+        documents = DocumentOperations.get_project_documents(db, project_id)
+        document_ids = [doc.id for doc in documents]
+
+        # Determine temp directory (fall back to metadata in Redis if missing)
+        temp_dir = project.temp_dir
+        if not temp_dir:
             project_data_json = sync_redis.get(f"project:{project_id}")
-            if not project_data_json:
-                raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
-            project_data = json.loads(project_data_json)
-            temp_dir = project_data.get("temp_dir")
-        
-        # Delete temporary files
+            if project_data_json:
+                try:
+                    project_data = json.loads(project_data_json)
+                    temp_dir = project_data.get("temp_dir")
+                except Exception as e:
+                    logger.warning(f"Failed to parse project metadata from Redis for {project_id}: {e}")
+
+        # Delete queue entries prior to removing DB rows (they cascade but we'll track counts)
+        queue_deletions = {
+            "processing_queue": 0,
+            "document_queue": 0,
+            "field_queue": 0,
+        }
+
+        try:
+            queue_deletions["processing_queue"] = db.query(ProcessingQueue).filter(ProcessingQueue.project_id == project_id).delete()
+            queue_deletions["document_queue"] = db.query(DocumentQueue).filter(DocumentQueue.project_id == project_id).delete()
+            queue_deletions["field_queue"] = db.query(FieldQueue).filter(FieldQueue.project_id == project_id).delete()
+            db.commit()
+        except Exception as queue_error:
+            db.rollback()
+            logger.error(f"Failed to purge queue entries for project {project_id}: {queue_error}")
+            raise
+
+        # Delete project (cascades documents/field_results)
+        deleted = ProjectOperations.delete_project(db, project_id)
+        if not deleted:
+            raise HTTPException(status_code=404, detail=f"Project {project_id} not found during delete")
+
+        # Remove temp files
         if temp_dir and os.path.exists(temp_dir):
-            import shutil
-            shutil.rmtree(temp_dir)
-            logger.info(f"Deleted temp directory: {temp_dir}")
-        
-        # Delete from Redis
-        sync_redis.delete(f"project:{project_id}")
-        sync_redis.delete(f"project:{project_id}:results")
-        
-        # Delete from Weaviate (will be done by worker if needed)
-        
-        logger.info(f"Deleted project {project_id}")
-        
-        return {"status": "success", "message": f"Project {project_id} deleted"}
-        
+            try:
+                shutil.rmtree(temp_dir)
+                logger.info(f"Deleted temp directory for project {project_id}: {temp_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to delete temp directory {temp_dir}: {e}")
+
+        # Cleanup Redis keys
+        redis_keys = [
+            f"project:{project_id}",
+            f"project:{project_id}:results",
+            f"project:{project_id}:status",
+        ]
+        deleted_redis = 0
+        for key in redis_keys:
+            deleted_redis += sync_redis.delete(key)
+        logger.info(f"Deleted {deleted_redis} Redis keys for project {project_id}")
+
+        # Cleanup Weaviate chunks for each document
+        weaviate_deleted = len(document_ids)
+        weaviate_errors = []
+        try:
+            weaviate_client = WeaviateClient(
+                url=os.getenv("WEAVIATE_URL", "http://weaviate:8080"),
+                document_loader=DocumentLoader()
+            )
+            for doc_id in document_ids:
+                try:
+                    weaviate_client.delete_by_doc_id(project_id, doc_id)
+                except Exception as weav_err:
+                    weaviate_errors.append({"document_id": doc_id, "error": str(weav_err)})
+        except Exception as connection_error:
+            logger.warning(f"Failed to initialize Weaviate client for project deletion: {connection_error}")
+            weaviate_errors.append({"error": str(connection_error)})
+
+        response = {
+            "status": "success",
+            "message": f"Project {project_id} deleted",
+            "project_id": project_id,
+            "documents_deleted": len(document_ids),
+            "queue_records_deleted": queue_deletions,
+            "redis_keys_deleted": deleted_redis,
+            "weaviate_documents": weaviate_deleted,
+        }
+
+        if weaviate_errors:
+            response["weaviate_errors"] = weaviate_errors
+            logger.warning(f"Project {project_id} deleted with Weaviate cleanup issues: {weaviate_errors}")
+
+        logger.info(f"Deleted project {project_id} with cleanup summary: {response}")
+        return response
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting project: {str(e)}")
+        logger.error(f"Error deleting project {project_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
 
 
@@ -1019,14 +1090,14 @@ async def add_documents_to_project(
                 db.commit()
                 db.refresh(document)
                 
-                # Enqueue for processing with field names in metadata
-                # Enqueue for processing with field names in metadata
+                # Enqueue document for processing
+                # The document will be processed with ThreadPoolExecutor for field extraction
                 job = document_queue.enqueue(
-                    process_document,
-                    args=(project_id, document.id),  # Correct order: (project_id, document_id)
+                    'app.api.worker_parallel.process_document',
+                    args=(project_id, document.id),
                     kwargs={
-                        'field_names': fields_to_extract,  # Pass the field names to filter
-                        'is_regeneration': False
+                        'is_regeneration': False,
+                        'field_names': fields_to_extract if fields_to_extract else None
                     },
                     job_id=f"doc_{document.id}_{int(datetime.utcnow().timestamp())}",
                     result_ttl=REDIS_TTL_SECONDS,
@@ -1146,27 +1217,21 @@ async def regenerate_document(
     db.commit()
     
     try:
-        # Prepare job arguments
-        job_kwargs = {
-            "document_id": document_id,
-            "project_id": project_id,
-            "is_regeneration": True,
-            "job_id": f"doc_{document_id}_{int(datetime.utcnow().timestamp())}",
-            "result_ttl": REDIS_TTL_SECONDS,
-            "failure_ttl": REDIS_TTL_SECONDS,
-            "timeout": "30m"
-        }
-        
-        # Add field_names to job kwargs if specified
-        if fields_to_regenerate:
-            job_kwargs["field_names"] = fields_to_regenerate
-        
-        # Add custom prompts to job kwargs if specified
-        if custom_prompts:
-            job_kwargs["custom_prompts"] = custom_prompts
-        
-        # Enqueue for reprocessing
-        job = document_queue.enqueue(process_document, **job_kwargs)
+        # Enqueue document for regeneration
+        # The document will be processed with ThreadPoolExecutor for field extraction
+        job = document_queue.enqueue(
+            'app.api.worker_parallel.process_document',
+            args=(project_id, document_id),
+            kwargs={
+                'is_regeneration': True,
+                'field_names': fields_to_regenerate if fields_to_regenerate else None,
+                'custom_prompts': custom_prompts if custom_prompts else None
+            },
+            job_id=f"doc_{document_id}_{int(datetime.utcnow().timestamp())}",
+            result_ttl=REDIS_TTL_SECONDS,
+            failure_ttl=REDIS_TTL_SECONDS,
+            timeout="30m"
+        )
         
         return {
             "status": "queued",
@@ -1257,8 +1322,7 @@ async def list_all_projects(
 
 @project_router.post("/process-template", response_model=TemplateProcessResponse)
 async def process_template(template_name: str = Body(..., embed=True, description="Name of the template file (without .json extension)")):
-    """
-    Process a JSON template file from the templates directory and return all active fields with their configurations.
+    """Process a JSON template file from the templates directory and return all active fields with their configurations.
     
     Args:
         template_name: Name of the template file (without .json extension)
@@ -1304,28 +1368,36 @@ async def process_template(template_name: str = Body(..., embed=True, descriptio
             logger.error(f"Error reading/parsing template file: {str(e)}", exc_info=True)
             raise
         
-        # Extract active fields as code->label mapping
-        active_fields = {}
+        # Extract active fields and preserve full configuration
+        active_fields = []
         if 'fields' in template_data:
             for field in template_data['fields']:
                 if field.get('isActive', True):  # Default to True if not specified
-                    code = field.get('code', '')
-                    label = field.get('label', '')
-                    if code:
-                        active_fields[code] = label
-        
+                    # Append a shallow copy to avoid unintended mutations downstream
+                    active_fields.append({**field})  # shallow copy using ** operator
+
         response = {
             'success': True,
             'message': f"Successfully processed template: {template_data.get('name', 'Unnamed Template')}",
-            'fields': active_fields,  # key = code, value = label
+            'fields': active_fields,  # full JSON context for active fields
             'total_fields': len(active_fields),
             'suggestion': template_data.get('suggestion', '')  # ✅ Added this line
         }
         logger.info(response)
         
-        logger.info(f"Successfully processed template. Found {len(active_fields)} active fields.")
         return response
         
+    except json.JSONDecodeError as e:
+        error_msg = f"Invalid JSON in template {template_path}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=400, detail=error_msg)
+    except HTTPException:
+        raise
+    except Exception as e:
+        error_msg = f"Error processing template {template_path}: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise HTTPException(status_code=500, detail=error_msg)
+             
     except json.JSONDecodeError as e:
         error_msg = f"Invalid JSON in template {template_path}: {str(e)}"
         logger.error(error_msg, exc_info=True)

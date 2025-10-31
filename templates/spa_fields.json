@@ -65,20 +65,9 @@
       "code": "definition_of_loss",
       "label": "definition of loss",
       "type": "llm",
-      "prompt": "Inject the clause number (and the relevant schedule of the SPA, if applicable) of the definition of Loss from the SPA and complete the folmediuming: \"Folmedium the definition of Loss as set out in clause [...] of the SPA.\" If its not defined, respond with \"[Note to HWF: Loss is not defined in the SPA. Please review the SPA to confirm.]\"",
+      "prompt": "Inject the clause number (and the relevant schedule of the SPA, if applicable) of the definition of Loss from the SPA and complete the folmediuming: \"Folmedium the definition of Loss as set out in clause [...] of the SPA.\" If its not defined, dont give empty responce, respond with \"[Note to HWF: Loss is not defined in the SPA. Please review the SPA to confirm.]\"",
       "typeOfPrompt": "summarize",
       "model": "gpt-5",
-      "mode": "medium",
-      "isActive": true,
-      "explanationNeeded": false
-    },
-    {
-      "code": "indirect_damages",
-      "label": "indirect damages",
-      "type": "llm",
-      "prompt": "If the liability of the Seller / Warrantor for (i) indirect and/or consequential damages; and/or (ii) loss of profit is not expressly limited in the SPA / MWD, then  please add the folmediuming note: „[Note to HWF: Propose to delete this row as the such loss / damages do not appear to be expressly excluded]“.",
-      "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": false
@@ -101,17 +90,6 @@
       "prompt": "If the term \u201cDisclosed\u201d is defined in the SPA, complete the following sentence with the relevant clause reference:\n\u201cFollow the definition of \u2018Disclosed\u2019 as set out in clause [\u25cf] of the SPA.\u201d\nIf the term disclosed is not defined in the SPA, please respond with \"Note to HWF: The term 'Disclosed' is not defined in the SPA. Delete this row and include the next row below.\"",
       "typeOfPrompt": "summarize",
       "model": "gpt-5",
-      "mode": "medium",
-      "isActive": true,
-      "explanationNeeded": false
-    },
-    {
-      "code": "definition_disclosed",
-      "label": "definition_disclosed",
-      "type": "llm",
-      "prompt": "If there is a definition in the SPA that specifies what the term \u201cDisclosed\u201d is deemed to mean, please add the following note: \u201e[Note to HWF: Propose to delete this row as the standard of Disclosure appears to have been defined]\u201c. Otherwise respond with the note \"[Note to HWF: propose to include as the term \"Disclosed\" is not defined in the SPA]\"",
-      "typeOfPrompt": "summarize",
-      "model": "gpt-5-mini",
       "mode": "medium",
       "isActive": true,
       "explanationNeeded": false

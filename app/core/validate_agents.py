@@ -312,12 +312,14 @@ Return your response as a JSON object with this exact format:
             logger.debug(f"Raw LLM response type: {type(response.content)}, length: {len(str(response.content)) if response.content else 0}")
             text_content = self._extract_text_from_content(response.content)
             if not text_content:
-                raise RuntimeError("Empty text extracted from response content")
+                logger.warning("Empty response from LLM in confidence calculation, using fallback")
+                return {"confidence_score": 0.3, "reasoning": "Empty response from LLM service"}
             
             try:
                 json.loads(text_content)
             except json.JSONDecodeError as e:
-                raise RuntimeError(f"Response is not valid JSON: {text_content[:100]}...") from e
+                logger.warning(f"Invalid JSON from LLM in confidence: {text_content[:100]}..., using fallback")
+                return {"confidence_score": 0.3, "reasoning": "Invalid JSON response from LLM service"}
             
             parsed_response = self.parser.parse(text_content)
             logger.debug(f"Confidence response: {parsed_response}")
@@ -354,12 +356,14 @@ Return your response as a JSON object with this exact format:
             logger.debug(f"Raw LLM response type: {type(response.content)}, length: {len(str(response.content)) if response.content else 0}")
             text_content = self._extract_text_from_content(response.content)
             if not text_content:
-                raise RuntimeError("Empty text extracted from response content")
+                logger.warning("Empty response from LLM in no-chunks confidence, using fallback")
+                return {"confidence_score": 0.3, "reasoning": "Empty response from LLM service"}
             
             try:
                 json.loads(text_content)
             except json.JSONDecodeError as e:
-                raise RuntimeError(f"Response is not valid JSON: {text_content[:100]}...") from e
+                logger.warning(f"Invalid JSON from LLM in no-chunks confidence: {text_content[:100]}..., using fallback")
+                return {"confidence_score": 0.3, "reasoning": "Invalid JSON response from LLM service"}
             
             parsed_response = self.parser.parse(text_content)
             logger.debug(f"No-chunks confidence response: {parsed_response}")
@@ -645,7 +649,8 @@ Return your response as a JSON object with this exact format:
             logger.debug(f"Raw LLM response type: {type(validation_response)}, length: {len(str(validation_response)) if validation_response else 0}")
             text_content = self._extract_text_from_content(validation_response)
             if not text_content:
-                raise RuntimeError("Empty text extracted from response content")
+                logger.warning("Empty validation response from LLM, using fallback")
+                return ValidationResult(feedback="NO_FEEDBACK", confidence_score=0.5)
             
             try:
                 json.loads(text_content)

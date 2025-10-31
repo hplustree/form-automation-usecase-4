@@ -45,7 +45,7 @@ services:
     networks:
       - pipeline-network
 
-  # Parallel RQ Workers for documents, fields, and projects
+  # Parallel Processing Workers using ThreadPoolExecutor
   workers:
     build: .
     container_name: siso-pipeline-workers
@@ -53,14 +53,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - WEAVIATE_URL=http://weaviate:8080
       - DATABASE_URL=postgresql://postgres:1234@postgres:5432/siso_pipeline
-      # Hierarchical worker mode
-      - USE_HIERARCHICAL_WORKERS=${USE_HIERARCHICAL_WORKERS:-false}
-      - NUM_DOC_WORKERS_PER_PROJECT=${NUM_DOC_WORKERS_PER_PROJECT:-2}
-      - NUM_FIELD_WORKERS_PER_DOC=${NUM_FIELD_WORKERS_PER_DOC:-5}
-      # Traditional parallel mode
-      - NUM_DOC_WORKERS=${NUM_DOC_WORKERS:-2}
-      - NUM_FIELD_WORKERS=${NUM_FIELD_WORKERS:-10}
-      - NUM_PROJECT_WORKERS=${NUM_PROJECT_WORKERS:-1}
+      # Parallel Processing Configuration
+      - NUM_PROJECT_WORKERS=${NUM_PROJECT_WORKERS:-3}
+      - MAX_CONCURRENT_DOCS=${MAX_CONCURRENT_DOCS:-2}
+      - MAX_CONCURRENT_FIELDS=${MAX_CONCURRENT_FIELDS:-5}
     env_file:
       - .env
     volumes:
