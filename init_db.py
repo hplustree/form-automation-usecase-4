@@ -18,10 +18,10 @@ def create_database_if_not_exists():
     
     # Connection parameters for PostgreSQL
     db_params = {
-        'host': os.getenv('DB_HOST', 'postgres'),
-        'port': os.getenv('DB_PORT', '5432'),
-        'user': os.getenv('DB_USER', 'postgres'),
-        'password': os.getenv('DB_PASSWORD', '1234')
+        'host': os.getenv('POSTGRES_HOST', os.getenv('DB_HOST', 'postgres')),
+        'port': os.getenv('POSTGRES_PORT', os.getenv('DB_PORT', '5432')),
+        'user': os.getenv('POSTGRES_USER', os.getenv('DB_USER', 'postgres')),
+        'password': os.getenv('POSTGRES_PASSWORD', os.getenv('DB_PASSWORD', '1234'))
     }
     
     for attempt in range(max_retries):

@@ -15,6 +15,7 @@ from datetime import datetime
 import redis as rqredis
 from sqlalchemy.orm import Session
 from rq import Queue, get_current_job
+from concurrent.futures import ThreadPoolExecutor, as_completed, TimeoutError
 from app.core.weaviate_client import WeaviateClient
 from app.core.embedding import EmbeddingService
 from app.core.llm import LLMService
@@ -165,6 +166,23 @@ def process_document(
     custom_prompts: dict = None,
     **kwargs
 ):
+    # Update document status to indicate processing has started
+    db = SessionLocal()
+    try:
+        if is_regeneration:
+            DocumentOperations.update_document_status(
+                db, document_id, "regenerating",
+                error_message="Regenerating fields..."
+            )
+        else:
+            DocumentOperations.update_document_status(
+                db, document_id, "processing",
+                error_message="Processing document..."
+            )
+    except Exception as e:
+        logger.error(f"Error updating document status: {str(e)}")
+    finally:
+        db.close()
     """
     Process a document by extracting text, splitting into chunks, generating embeddings, and storing in Weaviate.
     
@@ -380,7 +398,7 @@ def process_document(
             # Mark document as chunks_ready in queue (for chunk processing)
             DocumentQueueOperations.complete_document(db, document_id, "chunks_ready")
             
-            # Enqueue field extraction tasks for this document
+            # Process field extraction tasks for this document
             # Get the requested field names from either the function parameter or project metadata
             requested_fields = field_names or []
             if not requested_fields and project.metadata and 'requested_fields' in project.metadata:
@@ -421,37 +439,20 @@ def process_document(
                 logger.warning(f"[Worker {worker_id}] Document marked as completed with warning: {warning_msg}")
                 return
             
-            # Determine which queue to use for field extraction
-            if use_hierarchical:
-                # Spawn dedicated field workers for this document
-                num_field_workers = int(os.getenv("NUM_FIELD_WORKERS_PER_DOC", "5"))
-                logger.info(f"[{worker_type} Worker {worker_id}] Spawning {num_field_workers} field workers for document {document_id}")
-                
-                worker_manager = WorkerManager(REDIS_URL)
-                field_workers = worker_manager.spawn_field_workers(
-                    project_id=project_id,
-                    document_id=document_id,
-                    num_workers=num_field_workers,
-                    worker_id_prefix=f"{worker_id}"
-                )
-                
-                # Use document-specific queue for hierarchical processing
-                target_field_queue = get_queue_for_document(project_id, document_id)
-                logger.info(f"[{worker_type} Worker {worker_id}] Using hierarchical field queue: {target_field_queue.name}")
-            else:
-                # Use global field queue for traditional parallel processing
-                target_field_queue = field_queue
-                logger.info(f"[{worker_type} Worker {worker_id}] Using global field queue: {target_field_queue.name}")
+            # Process fields in parallel using ThreadPoolExecutor
+            max_field_workers = int(os.getenv("MAX_CONCURRENT_FIELDS", "5"))
+            logger.info(f"[Worker {worker_id}] Processing {len(fields_config)} fields in parallel (max {max_field_workers} concurrent)")
             
-            # Process each field
+            field_results = {}
+            field_errors = {}
+            field_start_time = time.time()
+            
+            # Prepare field configurations with custom prompts
             for field_config in fields_config:
                 if not field_config or not field_config.get('field_name'):
-                    logger.warning(f"Skipping invalid field config: {field_config}")
                     continue
                     
                 field_name = field_config["field_name"]
-                field_type = field_config.get('type', 'unknown')
-                field_model = field_config.get('model', 'default')
                 
                 # Override field config with custom prompts if provided
                 if custom_prompts and field_name in custom_prompts:
@@ -468,53 +469,176 @@ def process_document(
                     if custom_prompt_data.get('model'):
                         field_config['model'] = custom_prompt_data['model']
                         logger.info(f"[Worker {worker_id}] Using custom model '{custom_prompt_data['model']}' for field '{field_name}'")
-                
-                logger.info(f"[Worker {worker_id}] Enqueuing field extraction for '{field_name}' (Type: {field_type}, Model: {field_model})")
-                
-                # Log field configuration (safely, without sensitive info)
-                safe_config = {k: v for k, v in field_config.items() if k not in ['prompt', 'api_key', 'password']}
-                logger.debug(f"[Worker {worker_id}] Field config: {safe_config}")
-                
-                # Enqueue in database
-                try:
-                    FieldQueueOperations.enqueue_field(
-                        db,
-                        document_id=document_id,
-                        project_id=project_id,
-                        field_name=field_name,
-                        field_config=field_config,
-                        priority=0,
-                        depends_on_doc=True
-                    )
+            
+            # Process fields in parallel
+            with ThreadPoolExecutor(max_workers=max_field_workers) as field_executor:
+                # Submit all field processing tasks
+                future_to_field = {}
+                for field_config in fields_config:
+                    if not field_config or not field_config.get('field_name'):
+                        logger.warning(f"Skipping invalid field config: {field_config}")
+                        continue
+                        
+                    field_name = field_config["field_name"]
+                    field_type = field_config.get('type', 'unknown')
+                    field_model = field_config.get('model', 'default')
                     
-                    # Enqueue in RQ for processing using the appropriate queue
-                    target_field_queue.enqueue(
-                        'app.api.worker_parallel.process_field',
-                        args=(
-                            document_id,
-                            project_id,
-                            field_name,
-                            field_config
-                        ),
-                        job_timeout=600,  # 10 minutes per field
-                        result_ttl=REDIS_TTL_SECONDS
-                    )
+                    logger.info(f"[Worker {worker_id}] Submitting field extraction for '{field_name}' (Type: {field_type}, Model: {field_model})")
+                    
+                    # Add field to database queue
+                    try:
+                        FieldQueueOperations.enqueue_field(
+                            db,
+                            document_id=document_id,
+                            project_id=project_id,
+                            field_name=field_name,
+                            field_config=field_config,
+                            priority=0,
+                            depends_on_doc=True
+                        )
+                        
+                        # Submit field for parallel processing
+                        try:
+                            future = field_executor.submit(
+                                process_field,
+                                document_id,
+                                project_id,
+                                field_name,
+                                field_config
+                            )
+                            future_to_field[future] = field_name
+                            logger.info(f"[Worker {worker_id}] Enqueued field extraction for '{field_name}'")
+                        except Exception as e:
+                            logger.error(f"[Worker {worker_id}] Failed to submit field '{field_name}': {str(e)}", exc_info=True)
+                            field_errors[field_name] = str(e)
+                            
+                            # Update field status in database immediately on submission failure
+                            try:
+                                field_entry = db.query(FieldQueue).filter(
+                                    FieldQueue.document_id == document_id,
+                                    FieldQueue.field_name == field_name
+                                ).first()
+                                if field_entry:
+                                    FieldQueueOperations.complete_field(
+                                        db, field_entry.id, "failed",
+                                        error_message=f"Failed to submit for processing: {str(e)}"
+                                    )
+                                    db.commit()
+                            except Exception as db_error:
+                                logger.error(f"Failed to update field status: {str(db_error)}")
+                    except Exception as e:
+                        logger.error(f"[Worker {worker_id}] Failed to submit field '{field_name}': {str(e)}", exc_info=True)
+                        field_errors[field_name] = str(e)
+                
+                # Process completed field extractions
+                for future in as_completed(future_to_field):
+                    field_name = future_to_field[future]
+                    try:
+                        result = future.result(timeout=600)  # 10 minutes timeout per field
+                        field_results[field_name] = result
+                        logger.info(f"[Worker {worker_id}] Successfully processed field '{field_name}'")
+                    except Exception as e:
+                        error_msg = f"Error processing field '{field_name}': {str(e)}"
+                        logger.error(f"[Worker {worker_id}] {error_msg}")
+                        field_errors[field_name] = error_msg
+                        # Update field status in database
+                        try:
+                            field_entry = db.query(FieldQueue).filter(
+                                FieldQueue.document_id == document_id,
+                                FieldQueue.field_name == field_name
+                            ).first()
+                            if field_entry:
+                                FieldQueueOperations.complete_field(
+                                    db, field_entry.id, "failed",
+                                    error_message=error_msg
+                                )
+                                db.commit()
+                        except Exception as db_error:
+                            logger.error(f"Failed to update field status: {str(db_error)}")
+            
+            # Wait for all field processing to complete
+            logger.info(f"[Worker {worker_id}] Waiting for {len(future_to_field)} field extractions to complete...")
+            
+            # Process completed field extractions
+            for future in as_completed(future_to_field):
+                field_name = future_to_field[future]
+                try:
+                    result = future.result(timeout=600)  # 10 minutes timeout per field
+                    field_results[field_name] = result
+                    logger.info(f"[Worker {worker_id}] Successfully processed field '{field_name}'")
                 except Exception as e:
-                    logger.error(f"[Worker {worker_id}] Failed to enqueue field '{field_name}': {str(e)}", exc_info=True)
-                    # Log memory usage when field enqueue fails
-                    logger.error(f"[Worker {worker_id}] Memory usage (RSS): {process.memory_info().rss / 1024 / 1024:.2f}MB")
-                    # Continue with other fields even if one fails
+                    error_msg = f"Error processing field '{field_name}': {str(e)}"
+                    logger.error(f"[Worker {worker_id}] {error_msg}")
+                    field_errors[field_name] = error_msg
+                    # Update field status in database
+                    try:
+                        field_entry = db.query(FieldQueue).filter(
+                            FieldQueue.document_id == document_id,
+                            FieldQueue.field_name == field_name
+                        ).first()
+                        if field_entry:
+                            FieldQueueOperations.complete_field(
+                                db, field_entry.id, "failed",
+                                error_message=error_msg
+                            )
+                            db.commit()
+                    except Exception as db_error:
+                        logger.error(f"Failed to update field status: {str(db_error)}")
             
-            # Log completion of field enqueuing
+            # Calculate field processing results
+            total_fields = len(fields_config)
+            successful_fields = len(field_results)
+            failed_fields = len(field_errors)
+            field_elapsed = time.time() - field_start_time
+            
+            logger.info(f"[Worker {worker_id}] Field processing completed in {field_elapsed:.2f}s: "
+                      f"{successful_fields}/{total_fields} successful, {failed_fields} failed")
+            
+            # Update document status based on field processing results
             elapsed_time = time.time() - start_time
-            logger.info(f"[Worker {worker_id}] Successfully enqueued {len(fields_config)} field extraction tasks")
-            logger.info(f"[Worker {worker_id}] Document processing time so far: {elapsed_time:.2f} seconds")
-            logger.info(f"[Worker {worker_id}] Memory usage: {process.memory_info().rss / 1024 / 1024:.2f}MB")
+            if not future_to_field and not field_results:
+                # No fields were processed at all
+                error_msg = "No fields were processed"
+                logger.error(f"[Worker {worker_id}] {error_msg}")
+                DocumentOperations.update_document_status(
+                    db, document_id, "failed",
+                    error_message=error_msg
+                )
+                db.commit()
+            elif failed_fields == total_fields and total_fields > 0:
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed_with_errors",
+                    error_message=f"All {failed_fields} fields failed to process"
+                )
+            elif failed_fields > 0:
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed_with_errors",
+                    error_message=f"{failed_fields} out of {total_fields} fields failed"
+                )
+            else:
+                DocumentOperations.update_document_status(
+                    db, document_id, "completed"
+                )
             
-            # Log next steps
-            logger.info(f"[Worker {worker_id}] Field extraction tasks have been queued and will be processed asynchronously")
-            logger.info(f"[Worker {worker_id}] {'=' * 30} DOCUMENT PROCESSING QUEUED SUCCESSFULLY {'=' * 30}")
-            logger.info("" * 80)  # Visual separator
+            # Complete document in queue
+            DocumentQueueOperations.complete_document(
+                db, document_id, 
+                "completed_with_errors" if failed_fields > 0 else "completed"
+            )
+            
+            db.commit()
+            logger.info(f"[Worker {worker_id}] Document processing completed in {elapsed_time:.2f} seconds")
+            logger.info(f"[Worker {worker_id}] Memory usage: {process.memory_info().rss / 1024 / 1024:.2f}MB")
+            logger.info(f"[Worker {worker_id}] {'=' * 30} DOCUMENT PROCESSING COMPLETED {'=' * 30}")
+            
+            # Return processing results
+            return {
+                "document_id": document_id,
+                "status": "completed_with_errors" if failed_fields > 0 else "completed",
+                "fields_processed": successful_fields,
+                "fields_failed": failed_fields,
+                "processing_time": elapsed_time
+            }
             
         except Exception as e:
             # Get elapsed time safely
@@ -694,17 +818,37 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
                     initial_explanation = "No relevant information could be extracted from the document chunks."
                 
                 # Validate and improve with fallback
+                validation_timeout = int(os.getenv("VALIDATION_TIMEOUT_SECONDS", "300"))
+                validation_max_retries = int(os.getenv("VALIDATION_MAX_RETRIES", "2"))
+
                 try:
-                    validated_response = retry_api_call(
-                        validation_system.validate_and_improve,
-                        user_query=prompt,
-                        initial_answer=initial_answer,
-                        initial_explanation=initial_explanation,
-                        explanation_needed=explanation_needed,
-                        prompt_type=prompt_type,
-                        chunks=context_chunks,
-                        pages=context_pages,
+                    logger.info(
+                        f"[Worker {worker_id}] Starting validation for field '{field_name}' (timeout {validation_timeout}s)"
                     )
+                    with ThreadPoolExecutor(max_workers=1) as validation_executor:
+                        validation_future = validation_executor.submit(
+                            retry_api_call,
+                            validation_system.validate_and_improve,
+                            user_query=prompt,
+                            initial_answer=initial_answer,
+                            initial_explanation=initial_explanation,
+                            explanation_needed=explanation_needed,
+                            prompt_type=prompt_type,
+                            chunks=context_chunks,
+                            pages=context_pages,
+                            max_retries=validation_max_retries
+                        )
+                        validated_response = validation_future.result(timeout=validation_timeout)
+                    logger.info(f"[Worker {worker_id}] Validation completed for field '{field_name}'")
+                except TimeoutError:
+                    logger.warning(
+                        f"[Worker {worker_id}] Validation timeout after {validation_timeout}s for field '{field_name}'. Using initial answer."
+                    )
+                    validated_response = {
+                        "final_answer": initial_answer,
+                        "final_answer_explanation": initial_explanation or "",
+                        "final_confidence_score": 0.5
+                    }
                 except Exception as validation_error:
                     logger.warning(f"[Worker {worker_id}] Validation failed: {str(validation_error)}. Using initial answer without validation.")
                     # Fallback to initial answer if validation fails
@@ -843,6 +987,14 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
             
             logger.info(f"Successfully completed field '{field_name}' for document {document_id}")
             
+            # Return success result
+            return {
+                "field_name": field_name,
+                "status": "completed",
+                "value": result["value"],
+                "confidence": result.get("confidence", 0)
+            }
+            
         except Exception as e:
             logger.error(f"Error processing field '{field_name}': {str(e)}")
             
@@ -873,6 +1025,7 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
             # Check if all fields for this document are completed (even with errors)
             check_and_update_document_status(db, document_id, project_id)
             
+            # Re-raise the exception for the ThreadPoolExecutor to handle
             raise
             
     finally:
@@ -881,112 +1034,281 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
 
 def check_and_update_document_status(db: Session, document_id: str, project_id: str):
     """
-    Check if all fields for a document are completed and update document status accordingly.
+    Finalize a document once all field queue entries are resolved, even if some fields failed.
+    This function ensures the document is only marked as completed when all fields are processed.
+    
+    Args:
+        db: Database session
+        document_id: ID of the document to check
+        project_id: ID of the project (for logging)
     """
     try:
-        # Get document and project
+        # Get fresh document data to ensure we have the latest status
+        db.expire_all()  # Clear any cached data
         document = DocumentOperations.get_document(db, document_id)
+        if not document:
+            logger.warning(f"Document {document_id} not found in database")
+            return
+
+        # Skip documents that already reached a terminal state
+        if document.status in ["completed", "completed_with_errors", "failed"]:
+            logger.debug(f"Document {document_id} already in terminal state: {document.status}")
+            return
+
+        # Get all fields that should be processed for this document
         project = ProjectOperations.get_project(db, project_id)
-        
-        if not document or not project:
+        if not project or not project.metadata or 'template' not in project.metadata:
+            logger.error(f"Project {project_id} or its template not found in metadata")
             return
+
+        # Get all active fields from the template in metadata
+        template = project.metadata.get('template', {})
+        active_fields = [f for f in template.get('fields', []) if f.get('isActive', True)]
+        total_expected_fields = len(active_fields)
         
-        # Skip if document is already completed or failed
-        if document.status in ["completed", "failed"]:
-            return
-        
-        # Get expected number of fields from project config
-        expected_fields = len(project.fields_config)
-        
-        # Get all field results for this document
+        # Check if all fields have been processed (either succeeded or failed)
         field_results = db.query(FieldResult).filter(
             FieldResult.document_id == document_id
         ).all()
         
-        # Count completed and failed fields
+        # Get count of fields that are still in progress
+        pending_fields = db.query(FieldQueue).filter(
+            FieldQueue.document_id == document_id,
+            FieldQueue.status.in_(["waiting", "processing"])
+        ).all()
+        
+        # Get all field results including failed ones
+        all_field_results = db.query(FieldResult).filter(
+            FieldResult.document_id == document_id
+        ).all()
+        
+        # Log detailed status
+        logger.info(
+            f"Document {document_id} status check - "
+            f"Pending: {len(pending_fields)}, "
+            f"Completed: {len([fr for fr in all_field_results if fr.status == 'completed'])}, "
+            f"Failed: {len([fr for fr in all_field_results if fr.status == 'failed'])}"
+        )
+        
+        # Log pending field details
+        for field in pending_fields:
+            logger.debug(f"Field {field.field_name} is {field.status} (attempt {field.retry_count + 1})")
+        
+        if pending_fields:
+            logger.info(
+                f"Document {document_id}: {len(pending_fields)} field(s) still processing. "
+                f"Processed so far: {len(all_field_results)}/{total_expected_fields}"
+            )
+            return
+
+        # If we get here, we think all fields should be processed
+        # But let's verify by checking the actual field queue again
+        final_check = db.query(FieldQueue).filter(
+            FieldQueue.document_id == document_id,
+            FieldQueue.status.in_(["waiting", "processing"])
+        ).first()
+        
+        if final_check:
+            logger.info(
+                f"Document {document_id}: Found active field {final_check.field_name} "
+                f"in status {final_check.status} - delaying completion"
+            )
+            return
+            
+        # Get final field results
+        field_results = db.query(FieldResult).filter(
+            FieldResult.document_id == document_id
+        ).all()
+        
+        processed_field_names = {fr.field_name for fr in field_results}
+        expected_field_names = {f['code'] for f in active_fields}
+        
+        # Check for missing fields
+        missing_fields = expected_field_names - processed_field_names
+        if missing_fields:
+            logger.warning(
+                f"Document {document_id}: Missing results for {len(missing_fields)} fields. "
+                f"Expected {len(expected_field_names)} fields, got {len(processed_field_names)}. "
+                f"Missing: {', '.join(sorted(missing_fields))}"
+            )
+            
+            # In regeneration mode, we need to be extra careful about completion
+        if document.status == 'regenerating':
+            # Get the list of fields that were requested for regeneration
+            regenerating_fields = set()
+            if document.metadata and 'regenerating_fields' in document.metadata:
+                regenerating_fields = set(document.metadata['regenerating_fields'])
+            
+            logger.info(
+                f"Regenerating document {document_id} - "
+                f"Processing {len(regenerating_fields)} fields: {', '.join(regenerating_fields) if regenerating_fields else 'all fields'}"
+            )
+            
+            # If we have pending fields, don't mark as completed yet
+            if pending_fields:
+                pending_field_names = {f.field_name for f in pending_fields}
+                logger.info(
+                    f"Document {document_id}: Still processing {len(pending_fields)} fields - "
+                    f"{', '.join(pending_field_names)}"
+                )
+                return
+                
+            # Check if all requested regeneration fields are complete
+            if regenerating_fields:
+                completed_fields = {fr.field_name for fr in field_results if fr.status == 'completed'}
+                pending_regeneration = regenerating_fields - completed_fields
+                
+                if pending_regeneration:
+                    logger.info(
+                        f"Document {document_id}: Still waiting for regeneration of {len(pending_regeneration)} fields - "
+                        f"{', '.join(pending_regeneration)}"
+                    )
+                    return
+            # If no fields were processed at all, that's an error
+            elif not field_results:
+                error_msg = "No fields were processed during regeneration"
+                logger.error(error_msg)
+                DocumentOperations.update_document_status(
+                    db, document_id, "failed", error_message=error_msg
+                )
+                logger.error(f"Document {document_id} failed: {error_msg}")
+                return
+
+        # Calculate success/failure counts
         completed_fields = sum(1 for fr in field_results if fr.status == "completed")
         failed_fields = sum(1 for fr in field_results if fr.status == "failed")
         total_processed = completed_fields + failed_fields
+
+        # Log detailed status before updating
+        logger.info(
+            f"[Status Update] Document {document_id} - "
+            f"Completed: {completed_fields}, Failed: {failed_fields}, "
+            f"Missing: {len(missing_fields) if missing_fields else 0}, "
+            f"Pending: {len(pending_fields) if 'pending_fields' in locals() else 0}"
+        )
         
-        # Check if all fields are processed
-        if total_processed >= expected_fields:
-            if failed_fields == 0:
-                # All fields completed successfully
-                DocumentOperations.update_document_status(
-                    db, document_id, "completed"
-                )
-                logger.info(f"Document {document_id} completed: all {completed_fields} fields processed successfully")
-            else:
-                # Some fields failed
-                DocumentOperations.update_document_status(
-                    db, document_id, "completed",
-                    error_message=f"{failed_fields} field(s) failed extraction"
-                )
-                logger.warning(f"Document {document_id} completed with errors: {completed_fields} succeeded, {failed_fields} failed")
+        # Determine final status
+        if failed_fields == 0 and not missing_fields:
+            final_status = "completed"
+            error_message = None
+            logger.info(
+                f"[Status Update] Document {document_id} completed successfully: "
+                f"{completed_fields} fields processed"
+            )
         else:
-            # Still processing fields
-            logger.debug(f"Document {document_id}: {total_processed}/{expected_fields} fields processed")
+            final_status = "completed_with_errors"
+            error_parts = []
+            if failed_fields > 0:
+                error_parts.append(f"{failed_fields} field(s) failed extraction")
+            if missing_fields:
+                error_parts.append(f"{len(missing_fields)} field(s) missing results")
+            error_message = "; ".join(error_parts)
+            logger.warning(
+                f"[Status Update] Document {document_id} completed with errors: {error_message}"
+            )
             
+            logger.warning(
+                f"Document {document_id} completed with issues: {completed_fields} succeeded, "
+                f"{failed_fields} failed, {len(missing_fields)} missing. Details: {error_message}"
+            )
+
+        # Log before updating document status
+        logger.info(
+            f"[Document Status] Attempting to update document {document_id} to status: {final_status}, "
+            f"Error: {error_message or 'None'}"
+        )
+        
+        try:
+            # Update document status
+            DocumentOperations.update_document_status(
+                db,
+                document_id,
+                final_status,
+                error_message=error_message
+            )
+            
+            # Verify the status was updated
+            updated_doc = db.query(Document).filter(Document.id == document_id).first()
+            if updated_doc and updated_doc.status == final_status:
+                logger.info(
+                    f"[Document Status] Successfully updated document {document_id} to status: {final_status}"
+                )
+            else:
+                current_status = updated_doc.status if updated_doc else 'not found'
+                logger.error(
+                    f"[Document Status] Status update verification failed for document {document_id}. "
+                    f"Expected: {final_status}, Actual: {current_status}"
+                )
+                
+        except Exception as e:
+            logger.error(
+                f"[Document Status] Failed to update document {document_id} status to {final_status}: {str(e)}",
+                exc_info=True
+            )
+            raise
+        DocumentQueueOperations.complete_document(
+            db,
+            document_id,
+            final_status,
+            error_message=error_message
+        )
+
     except Exception as e:
         logger.error(f"Error updating document status: {str(e)}")
 
 
 def check_and_update_project_status(db: Session, project_id: str):
     """
-    Check if all documents and fields are processed and update project status.
+    Update overall project status based on document and field outcomes.
     """
     try:
         project = ProjectOperations.get_project(db, project_id)
         if not project:
             return
-        
-        # Get all documents for the project
+
         documents = DocumentOperations.get_project_documents(db, project_id)
-        
-        # Check document processing status
         total_docs = len(documents)
-        completed_docs = sum(1 for doc in documents if doc.status in ["completed", "completed_with_errors"])
+
+        completed_docs = sum(
+            1 for doc in documents if doc.status in ["completed", "completed_with_errors"]
+        )
         failed_docs = sum(1 for doc in documents if doc.status == "failed")
-        
-        # Check field processing status
+
         total_fields = total_docs * len(project.fields_config)
         completed_fields = 0
         failed_fields = 0
-        
+
         for doc in documents:
             field_results = db.query(FieldResult).filter(
                 FieldResult.document_id == doc.id
             ).all()
-            
+
             for field_result in field_results:
                 if field_result.status == "completed":
                     completed_fields += 1
                 elif field_result.status == "failed":
                     failed_fields += 1
-        
-        # Update project status
-        if completed_fields + failed_fields == total_fields:
-            # All fields processed
+
+        if total_fields > 0 and completed_fields + failed_fields == total_fields:
             if failed_fields == 0 and failed_docs == 0:
                 status = "completed"
+                error_message = None
             else:
                 status = "completed_with_errors"
-            
-            ProjectOperations.update_project_status(
-                db, project_id, status,
-                processed_documents=completed_docs,
-                failed_documents=failed_docs
-            )
-            
-            logger.info(f"Project {project_id} completed: {completed_docs}/{total_docs} docs, {completed_fields}/{total_fields} fields")
+                error_message = f"{failed_docs} document(s) or {failed_fields} field(s) failed"
         else:
-            # Still processing
-            ProjectOperations.update_project_status(
-                db, project_id, "processing",
-                processed_documents=completed_docs,
-                failed_documents=failed_docs
-            )
-            
+            status = "processing"
+            error_message = None
+
+        ProjectOperations.update_project_status(
+            db,
+            project_id,
+            status,
+            processed_documents=completed_docs,
+            failed_documents=failed_docs,
+            error_message=error_message
+        )
+
     except Exception as e:
         logger.error(f"Error updating project status: {str(e)}")
 
@@ -994,18 +1316,14 @@ def check_and_update_project_status(db: Session, project_id: str):
 def process_project_parallel(project_id: str):
     """
     Main entry point for parallel project processing.
-    This function enqueues all documents for parallel processing.
-    
-    Supports two modes:
-    1. Global queue mode (USE_HIERARCHICAL_WORKERS=false): Uses shared document_queue
-    2. Hierarchical mode (USE_HIERARCHICAL_WORKERS=true): Uses project-specific queues with dedicated workers
+    This function processes all documents in parallel using ThreadPoolExecutor.
     """
-    use_hierarchical = os.getenv("USE_HIERARCHICAL_WORKERS", "false").lower() == "true"
     worker_id = os.getenv("WORKER_ID", "unknown")
-    logger.info(f"[Project Worker {worker_id}] Starting parallel project processing: {project_id} (hierarchical={use_hierarchical})")
+    max_doc_workers = int(os.getenv("MAX_CONCURRENT_DOCS", "2"))
+    logger.info(f"[Project Worker {worker_id}] Starting parallel project processing: {project_id} with max {max_doc_workers} concurrent documents")
     
     db = SessionLocal()
-    worker_manager = None
+    start_time = time.time()
     
     try:
         # Get project from database
@@ -1020,54 +1338,80 @@ def process_project_parallel(project_id: str):
         # Get all documents for the project
         documents = DocumentOperations.get_project_documents(db, project_id)
         
-        logger.info(f"[Project Worker {worker_id}] Enqueueing {len(documents)} documents for parallel processing")
+        logger.info(f"[Project Worker {worker_id}] Processing {len(documents)} documents in parallel (max {max_doc_workers} concurrent)")
         
-        # Select queue based on mode
-        if use_hierarchical:
-            # Spawn dedicated document workers for this project
-            num_doc_workers = int(os.getenv("NUM_DOC_WORKERS_PER_PROJECT", "2"))
-            logger.info(f"[Project Worker {worker_id}] Spawning {num_doc_workers} document workers for project {project_id}")
+        # Track document results
+        doc_results = {}
+        doc_errors = {}
+        
+        # Process documents in parallel using ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=max_doc_workers) as executor:
+            # Submit all document processing tasks
+            future_to_doc = {}
+            for document in documents:
+                # Add to document queue in database
+                DocumentQueueOperations.enqueue_document(
+                    db,
+                    document_id=document.id,
+                    project_id=project_id,
+                    priority=0
+                )
+                
+                # Submit document for parallel processing
+                future = executor.submit(
+                    process_document,
+                    project_id,
+                    document.id
+                )
+                future_to_doc[future] = document
+                logger.info(f"[Project Worker {worker_id}] Submitted document {document.doc_name} for processing")
             
-            worker_manager = WorkerManager(REDIS_URL)
-            doc_workers = worker_manager.spawn_document_workers(
-                project_id=project_id,
-                num_workers=num_doc_workers,
-                worker_id_prefix=f"p{worker_id}"
-            )
-            
-            # Use project-specific queue for hierarchical processing
-            target_queue = get_queue_for_project(project_id, "documents")
-            logger.info(f"[Project Worker {worker_id}] Using hierarchical queue: {target_queue.name}")
+            # Process completed documents
+            for future in as_completed(future_to_doc):
+                document = future_to_doc[future]
+                try:
+                    result = future.result(timeout=1800)  # 30 minutes timeout per document
+                    doc_results[document.id] = result
+                    logger.info(f"[Project Worker {worker_id}] Successfully processed document {document.doc_name}")
+                except Exception as e:
+                    error_msg = f"Error processing document {document.doc_name}: {str(e)}"
+                    logger.error(f"[Project Worker {worker_id}] {error_msg}")
+                    doc_errors[document.id] = error_msg
+                    # Update document status to failed
+                    try:
+                        DocumentOperations.update_document_status(
+                            db, document.id, "failed", error_message=error_msg
+                        )
+                        db.commit()
+                    except Exception as db_error:
+                        logger.error(f"Failed to update document status: {str(db_error)}")
+        
+        # Calculate project completion status
+        total_docs = len(documents)
+        successful_docs = len(doc_results)
+        failed_docs = len(doc_errors)
+        
+        elapsed_time = time.time() - start_time
+        logger.info(f"[Project Worker {worker_id}] Project {project_id} processing completed in {elapsed_time:.2f}s: "
+                    f"{successful_docs}/{total_docs} successful, {failed_docs} failed")
+        
+        # Update project status based on results
+        if failed_docs == total_docs:
+            ProjectOperations.update_project_status(db, project_id, "failed", 
+                                                   error_message="All documents failed to process")
+        elif failed_docs > 0:
+            ProjectOperations.update_project_status(db, project_id, "completed_with_errors",
+                                                   error_message=f"{failed_docs} documents failed")
         else:
-            # Use global document queue for traditional parallel processing
-            target_queue = document_queue
-            logger.info(f"[Project Worker {worker_id}] Using global queue: {target_queue.name}")
+            ProjectOperations.update_project_status(db, project_id, "completed")
         
-        # Enqueue each document for parallel processing
-        for document in documents:
-            # Add to document queue in database
-            DocumentQueueOperations.enqueue_document(
-                db,
-                document_id=document.id,
-                project_id=project_id,
-                priority=0
-            )
-            
-            # Enqueue in RQ for processing
-            target_queue.enqueue(
-                'app.api.worker_parallel.process_document',
-                args=(project_id, document.id),
-                job_timeout=1800,  # 30 minutes per document
-                result_ttl=REDIS_TTL_SECONDS
-            )
-            
-            logger.info(f"Enqueued document {document.doc_name} for processing")
-        
-        logger.info(f"Successfully enqueued all documents for project {project_id}")
+        db.commit()
+        logger.info(f"[Project Worker {worker_id}] Successfully completed project {project_id}")
         
     except Exception as e:
-        logger.error(f"Error in parallel project processing: {str(e)}")
+        logger.error(f"[Project Worker {worker_id}] Error in parallel project processing: {str(e)}")
         ProjectOperations.update_project_status(db, project_id, "failed", error_message=str(e))
+        db.commit()
         raise
     finally:
         db.close()
