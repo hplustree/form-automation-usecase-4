@@ -47,7 +47,7 @@ import CheckCircleOutlineOutlinedIcon from '@mui/icons-material/CheckCircleOutli
 import VisibilityOutlinedIcon from "@mui/icons-material/VisibilityOutlined";
 import DownloadIcon from '@mui/icons-material/Download';
 import AutorenewIcon from '@mui/icons-material/Autorenew';
-import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult, regenerateDocument } from "../api/api";
+import { get_document_status, getDocumentResults, getProjectDetails, updateFieldResult, regenerateDocument, getTemplates } from "../api/api";
 import AddDocumentModal from "./AddDocumentModal";
 import AddIcon from '@mui/icons-material/Add';
 
@@ -218,6 +218,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [tempExportFields, setTempExportFields] = useState([]);
   const [exportMode, setExportMode] = useState(null); // 'excel' | 'word'
   const [tempExportDocs, setTempExportDocs] = useState([]);
+  const [fieldRegenerating, setFieldRegenerating] = useState({});
+  const [regenPromptDialog, setRegenPromptDialog] = useState({ open: false, docId: null, fieldName: null, prompt: '', loading: false, error: '' });
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
@@ -228,6 +230,96 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     });
     // Refresh the document list after adding
     getProjectStatus();
+  };
+
+  // Read template code for this project from sessionStorage
+  const getTemplateCodeForProject = () => {
+    try {
+      let code = '';
+      if (selectedProjectId) {
+        const tmplMap = JSON.parse(sessionStorage.getItem('project_template_map')) || {};
+        code = tmplMap[selectedProjectId] || '';
+      }
+      if ((!code || !code.length) && selectedProject?.name) {
+        const tmplByName = JSON.parse(sessionStorage.getItem('project_template_map_by_name')) || {};
+        const byName = tmplByName[selectedProject.name] || '';
+        if (byName) code = byName;
+      }
+      if ((!code || !code.length)) {
+        const lastCreated = sessionStorage.getItem('last_created_project_name');
+        if (lastCreated) {
+          const tmplByName = JSON.parse(sessionStorage.getItem('project_template_map_by_name')) || {};
+          const last = tmplByName[lastCreated] || '';
+          if (last) code = last;
+        }
+      }
+      return code || '';
+    } catch (e) {
+      console.warn('Failed to load template code from sessionStorage', e);
+      return '';
+    }
+  };
+
+  const openRegenPromptDialog = async (docId, fieldName) => {
+    const templateCode = getTemplateCodeForProject();
+    setRegenPromptDialog(prev => ({ ...prev, open: true, docId, fieldName, loading: true, error: '', prompt: '' }));
+    try {
+      let promptText = '';
+      if (templateCode) {
+        const res = await getTemplates(templateCode);
+        const fields = Array.isArray(res?.fields) ? res.fields : [];
+        const match = fields.find(f => f.code === fieldName);
+        if (match && match.prompt) promptText = match.prompt;
+      }
+      setRegenPromptDialog(prev => ({ ...prev, loading: false, prompt: promptText }));
+    } catch (e) {
+      console.error('Failed to fetch template prompt', e);
+      setRegenPromptDialog(prev => ({ ...prev, loading: false, error: 'Failed to load prompt' }));
+    }
+  };
+
+  const closeRegenPromptDialog = () => {
+    setRegenPromptDialog({ open: false, docId: null, fieldName: null, prompt: '', loading: false, error: '' });
+  };
+
+  const submitRegenWithPrompt = async () => {
+    const { docId, fieldName, prompt } = regenPromptDialog;
+    if (!selectedProjectId || !docId || !fieldName) return;
+    const key = `${docId}||${fieldName}`;
+    setFieldRegenerating(prev => ({ ...prev, [key]: true }));
+    // Optimistically set document to processing
+    setStatusByDoc(prev => ({ ...prev, [docId]: 'processing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
+    closeRegenPromptDialog();
+    try {
+      await regenerateDocument(selectedProjectId, docId, [fieldName], { prompt });
+      setToast({ open: true, message: `Regeneration requested for ${formatFieldName(fieldName)}`, severity: 'success' });
+    } catch (e) {
+      console.error('Failed to request field regeneration', e);
+      setToast({ open: true, message: 'Failed to request field regeneration', severity: 'error' });
+    } finally {
+      setFieldRegenerating(prev => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const handleRegenerateField = async (documentId, fieldName) => {
+    if (!selectedProjectId || !documentId || !fieldName) return;
+    const key = `${documentId}||${fieldName}`;
+    setFieldRegenerating(prev => ({ ...prev, [key]: true }));
+
+    // Optimistically set document to processing
+    setStatusByDoc(prev => ({ ...prev, [documentId]: 'processing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === documentId || d.id === documentId) ? { ...d, status: 'processing', progress: 0 } : d));
+
+    try {
+      await regenerateDocument(selectedProjectId, documentId, [fieldName]);
+      setToast({ open: true, message: `Regeneration requested for ${formatFieldName(fieldName)}`, severity: 'success' });
+    } catch (e) {
+      console.error('Failed to request field regeneration', e);
+      setToast({ open: true, message: 'Failed to request field regeneration', severity: 'error' });
+    } finally {
+      setFieldRegenerating(prev => ({ ...prev, [key]: false }));
+    }
   };
 
   // Initialize selected documents visibility from sessionStorage or default to all
@@ -1273,7 +1365,11 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                               {doc.fileName}
                             </Typography>
                           </Tooltip>
+                         
                         </Box>
+                         <Box sx={{ ml: 0.5  }}>
+                            {getStatusChip(statusByDoc[doc.doc_id || doc.id])}
+                          </Box>
                       </TableCell>
                     ))}
                   </TableRow>
@@ -1344,6 +1440,25 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                     </Tooltip>
                                   </Box>
                                 )}
+                                <Box sx={{ mt: 0.5, display: 'flex', alignItems: 'center' }}>
+                                 <Typography variant='caption' sx={{ mr: 0.5, color: 'text.secondary' }}>Regenerate:</Typography>
+                                  <Tooltip title="Regenerate this field" arrow>
+                                    <span>
+                                      <IconButton
+                                        size='small'
+                                        onClick={() => openRegenPromptDialog(doc.doc_id || doc.id, header)}
+                                        disabled={Boolean(fieldRegenerating[`${doc.doc_id || doc.id}||${header}`])}
+                                        sx={{ p: 0.25 }}
+                                      >
+                                        {fieldRegenerating[`${doc.doc_id || doc.id}||${header}`] ? (
+                                          <CircularProgress size={14} thickness={5} />
+                                        ) : (
+                                          <AutorenewIcon fontSize='inherit' />
+                                        )}
+                                      </IconButton>
+                                    </span>
+                                  </Tooltip>
+                                </Box>
                               </Box>
                           )}
                         </TableCell>
@@ -1410,6 +1525,47 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
         <DialogActions>
           <Button onClick={() => setExportFieldsOpen(false)} color="inherit">Cancel</Button>
           <Button onClick={applyExport} variant="contained" disabled={tempExportFields.length === 0 || tempExportDocs.length === 0}>Export</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Regenerate Prompt Dialog */}
+      <Dialog
+        open={regenPromptDialog.open}
+        onClose={closeRegenPromptDialog}
+        aria-labelledby="regen-prompt-dialog-title"
+        maxWidth="md"
+        fullWidth
+      >
+        <DialogTitle id="regen-prompt-dialog-title">
+          {regenPromptDialog.fieldName ? `Regenerate: ${formatFieldName(regenPromptDialog.fieldName)}` : 'Regenerate'}
+        </DialogTitle>
+        <DialogContent dividers>
+          {regenPromptDialog.loading ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <CircularProgress size={18} />
+              <Typography variant="body2">Loading prompt...</Typography>
+            </Box>
+          ) : (
+            <>
+              {regenPromptDialog.error && (
+                <Alert severity="warning" sx={{ mb: 2 }}>{regenPromptDialog.error}</Alert>
+              )}
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Edit the prompt for this field, then click Regenerate.
+              </Typography>
+              <TextField
+                fullWidth
+                multiline
+                minRows={6}
+                value={regenPromptDialog.prompt}
+                onChange={(e) => setRegenPromptDialog(prev => ({ ...prev, prompt: e.target.value }))}
+              />
+            </>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeRegenPromptDialog} color="inherit">Cancel</Button>
+          <Button onClick={submitRegenWithPrompt} variant="contained" disabled={regenPromptDialog.loading}>Regenerate</Button>
         </DialogActions>
       </Dialog>
 
@@ -1500,7 +1656,6 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
             borderRadius: 2, 
             display: 'flex', 
             flexDirection: 'column', 
-            maxHeight: '65vh', 
             overflow: 'hidden'
           }}
         >

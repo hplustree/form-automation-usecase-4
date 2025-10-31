@@ -137,6 +137,10 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
         fieldsByName[projectName] = selectedFieldNames;
         sessionStorage.setItem('project_fields_map_by_name', JSON.stringify(fieldsByName));
 
+        const tmplByName = JSON.parse(sessionStorage.getItem('project_template_map_by_name')) || {};
+        tmplByName[projectName] = selectedTemplate || templateName || '';
+        sessionStorage.setItem('project_template_map_by_name', JSON.stringify(tmplByName));
+
         // Seed placeholder results ("Processing") for each selected file keyed by project name
         const seedByName = uploadedFiles.map((f, idx) => {
           const resultObj = {};
@@ -167,6 +171,11 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
           const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
           fieldsMap[response.project_id] = selectedFieldNames;
           sessionStorage.setItem('project_fields_map', JSON.stringify(fieldsMap));
+
+          // Persist template for this project id
+          const tmplMap = JSON.parse(sessionStorage.getItem('project_template_map')) || {};
+          tmplMap[response.project_id] = selectedTemplate || templateName || '';
+          sessionStorage.setItem('project_template_map', JSON.stringify(tmplMap));
         } catch (e) {
           console.warn('Failed to save project fields to sessionStorage', e);
         }
@@ -200,6 +209,11 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
             if (fieldsByName[projectName]) {
               delete fieldsByName[projectName];
               sessionStorage.setItem('project_fields_map_by_name', JSON.stringify(fieldsByName));
+            }
+            const tmplByName = JSON.parse(sessionStorage.getItem('project_template_map_by_name')) || {};
+            if (tmplByName[projectName]) {
+              delete tmplByName[projectName];
+              sessionStorage.setItem('project_template_map_by_name', JSON.stringify(tmplByName));
             }
           } catch (e) {
             console.warn('Failed to cleanup name-based pre-seed', e);
@@ -273,9 +287,8 @@ const [selectedTemplate, setSelectedTemplate] = useState("");
     const fetchFieldsForTemplate = async () => {
       try {
         const res = await getTemplates(templateName);
-        if (res && res.fields) {
-          const entries = Object.entries(res.fields);
-          const mapped = entries.map(([id, label]) => ({ id, label, checked: false }));
+        if (res && Array.isArray(res.fields)) {
+          const mapped = res.fields.map((f) => ({ id: f.code, label: f.label, checked: false }));
           setFields(mapped);
         } else {
           setFields([]);

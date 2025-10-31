@@ -179,11 +179,14 @@ export const uploadDocuments = async (projectId, files, fieldNames = [], templat
 };
 
 // Regenerate a document's extraction for specified fields
-export const regenerateDocument = async (projectId, documentId, fieldNames = []) => {
+export const regenerateDocument = async (projectId, documentId, fieldNames = [], options = {}) => {
   try {
     const params = {};
     if (Array.isArray(fieldNames) && fieldNames.length) {
       params.field_names = fieldNames.join(',');
+    }
+    if (options && options.prompt) {
+      params.prompt = options.prompt;
     }
     const url = `${API_URL}/project/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/regenerate`;
     const response = await axios.post(url, null, {
