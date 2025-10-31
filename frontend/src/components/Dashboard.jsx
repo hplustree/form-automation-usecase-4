@@ -220,6 +220,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   const [tempExportDocs, setTempExportDocs] = useState([]);
   const [fieldRegenerating, setFieldRegenerating] = useState({});
   const [regenPromptDialog, setRegenPromptDialog] = useState({ open: false, docId: null, fieldName: null, prompt: '', loading: false, error: '' });
+  const [regeneratingAll, setRegeneratingAll] = useState(false);
+  const [docOrder, setDocOrder] = useState([]); // stable order of document IDs for columns
 
   // Handler for adding documents
   const handleAddDocument = (files) => {
@@ -230,6 +232,57 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     });
     // Refresh the document list after adding
     getProjectStatus();
+  };
+
+  // Keep a stable doc column order any time extractionResults change (e.g., seeded data)
+  useEffect(() => {
+    const ids = (extractionResults || []).map(d => d.doc_id || d.id).filter(Boolean);
+    if (!ids.length) { setDocOrder([]); return; }
+    setDocOrder((prev) => {
+      if (!prev || prev.length === 0) return ids;
+      const prevSet = new Set(prev);
+      const keepPrev = prev.filter(id => ids.includes(id));
+      const appendNew = ids.filter(id => !prevSet.has(id));
+      return [...keepPrev, ...appendNew];
+    });
+  }, [extractionResults]);
+
+  const handleRegenerateAll = async () => {
+    if (!selectedProjectId) return;
+    setRegeneratingAll(true);
+
+    // Load selected field names for this project
+    let fieldNames = [];
+    try {
+      const fieldsMap = JSON.parse(sessionStorage.getItem('project_fields_map')) || {};
+      if (Array.isArray(fieldsMap[selectedProjectId])) fieldNames = fieldsMap[selectedProjectId];
+    } catch (e) {
+      console.warn('Failed to load project fields from sessionStorage', e);
+    }
+
+    // Determine doc IDs from status list, fallback to extraction results
+    const docIds = (docStatus && docStatus.length
+      ? docStatus.map(d => d.doc_id || d.id)
+      : (extractionResults || []).map(d => d.doc_id || d.id)
+    ).filter(Boolean);
+
+    // Optimistically set all to processing
+    setStatusByDoc(prev => {
+      const next = { ...prev };
+      docIds.forEach(id => { next[id] = 'processing'; });
+      return next;
+    });
+    setDocStatus(prev => prev.map(d => (docIds.includes(d.doc_id || d.id)) ? { ...d, status: 'processing', progress: 0 } : d));
+
+    try {
+      await Promise.all(docIds.map(id => regenerateDocument(selectedProjectId, id, fieldNames)));
+      setToast({ open: true, message: `Regeneration requested for ${docIds.length} document(s)`, severity: 'success' });
+    } catch (e) {
+      console.error('Failed to request regeneration for all documents', e);
+      setToast({ open: true, message: 'Failed to request regeneration for all documents', severity: 'error' });
+    } finally {
+      setRegeneratingAll(false);
+    }
   };
 
   // Read template code for this project from sessionStorage
@@ -526,6 +579,15 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           const headersFromBackend = extractTableHeaders(resultsArray);
           if (headersFromBackend.length) setTableHeaders(headersFromBackend);
         }
+        // Update stable document order: preserve previous order and append new ids
+        const incomingIds = resultsArray.map(r => r.doc_id || r.id).filter(Boolean);
+        setDocOrder((prev) => {
+          if (!prev || prev.length === 0) return incomingIds;
+          const prevSet = new Set(prev);
+          const keepPrev = prev.filter(id => incomingIds.includes(id));
+          const appendNew = incomingIds.filter(id => !prevSet.has(id));
+          return [...keepPrev, ...appendNew];
+        });
       } else {
         console.log('No backend results yet; preserving pre-seeded table.');
       }
@@ -1007,8 +1069,12 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
   };
 
   const getVisibleDocs = () => {
-    const idsSet = new Set(selectedDocIds && selectedDocIds.length ? selectedDocIds : (extractionResults || []).map(d => d.doc_id || d.id));
-    return (extractionResults || []).filter(d => idsSet.has(d.doc_id || d.id));
+    const allDocs = extractionResults || [];
+    const byId = new Map(allDocs.map(d => [d.doc_id || d.id, d]));
+    const defaultOrder = allDocs.map(d => d.doc_id || d.id).filter(Boolean);
+    const order = (docOrder && docOrder.length) ? docOrder : defaultOrder;
+    const idsSet = new Set(selectedDocIds && selectedDocIds.length ? selectedDocIds : defaultOrder);
+    return order.filter(id => idsSet.has(id)).map(id => byId.get(id)).filter(Boolean);
   };
 
   if (!selectedProject) {
@@ -1217,6 +1283,21 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                     }}
                   >
                     Edit
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    startIcon={<AutorenewIcon />}
+                    onClick={handleRegenerateAll}
+                    disabled={extractionResults.length === 0 || regeneratingAll}
+                    sx={{
+                      textTransform: "none",
+                      fontWeight: 600,
+                      borderRadius: "6px",
+                      px: 2,
+                      py: 1,
+                    }}
+                  >
+                    {regeneratingAll ? 'Regenerating...' : 'Regenerate All'}
                   </Button>
                   <Button
                     variant="outlined"

@@ -83,8 +83,8 @@ function Header({ onMenuClick, sidebarOpen, isMobile, drawerWidth = 282 }) {
           </Box>
         </Box>
 
-        {/* Right Side: Dark/Light Mode Icon */}
-        <Box>
+        {/* Right Side: Dark/Light Mode Icon commented as not required now */}
+        {/* <Box>
           <IconButton
             color="inherit"
             onClick={toggleTheme}
@@ -96,8 +96,9 @@ function Header({ onMenuClick, sidebarOpen, isMobile, drawerWidth = 282 }) {
             }}
           >
             {mode === "light" ? <DarkModeOutlinedIcon /> : <LightModeOutlinedIcon />}
+            
           </IconButton>
-        </Box>
+        </Box> */}
       </Toolbar>
     </AppBar>
   );
