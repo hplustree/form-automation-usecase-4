@@ -482,12 +482,13 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       }
       await regenerateDocument(selectedProjectId, docId, body);
       setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'success' });
+      
     } catch (e) {
       console.error('Failed to request regeneration', e);
       setToast({ open: true, message: 'Failed to request regeneration', severity: 'error' });
     } finally {
       setRegenerating(prev => ({ ...prev, [docId]: false }));
-      // Trigger an immediate refresh
+
       // getProjectStatus();
     }
   };
