@@ -455,9 +455,33 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
 
     try {
-      await regenerateDocument(selectedProjectId, docId, fieldNames);
+      let fieldPrompts = [];
+      try {
+        const templateCode = getTemplateCodeForProject();
+        if (templateCode) {
+          const res = await getTemplates(templateCode);
+          const fields = Array.isArray(res?.fields) ? res.fields : [];
+          const byCode = new Map(fields.map(f => [f.code, f]));
+          fieldPrompts = (fieldNames || []).map(name => {
+            const cfg = byCode.get(name) || {};
+            return {
+              field_name: name,
+              prompt: cfg.prompt || '',
+              type_of_prompt: cfg.typeOfPrompt || undefined,
+              explanation_needed: typeof cfg.explanationNeeded === 'boolean' ? cfg.explanationNeeded : undefined,
+            };
+          });
+        }
+      } catch (inner) {
+        console.warn('Failed to load template prompts for document regenerate', inner);
+      }
+
+      const body = { field_names: fieldNames };
+      if (Array.isArray(fieldPrompts) && fieldPrompts.some(fp => fp.prompt)) {
+        body.field_prompts = fieldPrompts;
+      }
+      await regenerateDocument(selectedProjectId, docId, body);
       setToast({ open: true, message: `Regeneration requested for ${doc.doc_name || doc.fileName || 'document'}`, severity: 'success' });
-      // Let polling update actual status/progress
     } catch (e) {
       console.error('Failed to request regeneration', e);
       setToast({ open: true, message: 'Failed to request regeneration', severity: 'error' });
