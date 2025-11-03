@@ -554,7 +554,6 @@ class LLMService:
         except Exception as e:
             logger.warning(f"Page selection - Could not load generate_request for job {job_id}: {e}")
             file_name_map = {}
-        logger.info(f"file_name_map :{file_name_map} ")
         # Store unified references
         unified_references = []
         for key in top_pages:

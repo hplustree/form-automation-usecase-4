@@ -1,31 +1,75 @@
 #!/bin/bash
 
-# This script will create all remaining files for siso-pipeline project
+# This script will set up the siso-pipeline project including database initialization
 # Run this script from /home/akash/Documents/siso/siso-pipeline directory
 
 echo "Setting up siso-pipeline project..."
+# Check if running as root
+if [ "$EUID" -eq 0 ]; then 
+    echo "Please do not run this script as root"
+    exit 1
+fi
 
 # Create project structure
-mkdir -p app/api app/core app/utils temp_files temp_image_summaries
+echo "Creating project directories..."
+mkdir -p app/api app/core app/utils temp_files temp_image_summaries logs
 
-# Copy core modules from siso-daex (embedding, llm, validate_agents)
-echo "Copying core modules from siso-daex..."
-cp ../siso-daex/app/core/embedding.py app/core/
-cp ../siso-daex/app/core/llm.py app/core/
-cp ../siso-daex/app/core/validate_agents.py app/core/
+# Set proper permissions
+echo "Setting up permissions..."
+chmod -R 755 .
+chmod +x run_migrations.sh
+chmod +x init_db.py
 
-echo "Project structure created successfully!"
+# Check for required commands
+echo "Checking for required tools..."
+for cmd in python3 pip3 docker docker-compose; do
+    if ! command -v $cmd &> /dev/null; then
+        echo "Error: $cmd is not installed. Please install it first."
+        exit 1
+    fi
+done
+
+# Install Python dependencies
+echo "Installing Python dependencies..."
+python3 -m pip install --upgrade pip
+pip3 install -r requirements.txt
+
+# Set up environment variables
+if [ ! -f .env ]; then
+    echo "Creating .env file from example..."
+    cp .env.example .env
+    echo "Please edit the .env file with your configuration"
+else
+    echo ".env file already exists, skipping..."
+fi
+
+# Start Docker services
+echo "Starting Docker services..."
+docker-compose up -d postgres redis
+
+# Wait for PostgreSQL to be ready
+echo "Waiting for PostgreSQL to be ready..."
+until docker-compose exec -T postgres pg_isready -U postgres -d siso_pipeline; do
+    echo "Waiting for PostgreSQL..."
+    sleep 2
+done
+
+# Run database migrations
+echo "Running database migrations..."
+./run_migrations.sh
+
+# Build and start the application
+echo "Building and starting the application..."
+docker-compose build
+docker-compose up -d
+
 echo ""
-echo "Next steps:"
-echo "1. Create API endpoints (project.py, status.py, worker.py)"
-echo "2. Create requirements.txt"
-echo "3. Create .env file"
-echo "4. Create docker-compose.yml"
-echo "5. Create README.md"
+echo "Setup completed successfully!"
 echo ""
-echo "Files already created:"
-echo "- app/main.py"
-echo "- app/logging_config.py"
-echo "- app/core/weaviate_client.py"
-echo "- app/utils/file_handler.py"
-echo "- app/utils/locks.py"
+echo "Application is now running at http://localhost:8000"
+echo ""
+echo "Useful commands:"
+echo "  docker-compose logs -f     # View application logs"
+echo "  docker-compose down        # Stop all services"
+echo "  ./run_migrations.sh        # Run database migrations"
+echo ""
