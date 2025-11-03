@@ -178,20 +178,22 @@ export const uploadDocuments = async (projectId, files, fieldNames = [], templat
   }
 };
 
-// Regenerate a document's extraction for specified fields
-export const regenerateDocument = async (projectId, documentId, fieldNames = [], options = {}) => {
+
+export const regenerateDocument = async (projectId, documentId, payloadOrFields = [], options = {}) => {
   try {
-    const params = {};
-    if (Array.isArray(fieldNames) && fieldNames.length) {
-      params.field_names = fieldNames.join(',');
+    let body = {};
+    if (Array.isArray(payloadOrFields)) {
+      body.field_names = payloadOrFields;
+    } else if (payloadOrFields && typeof payloadOrFields === 'object') {
+      body = { ...payloadOrFields };
     }
-    if (options && options.prompt) {
-      params.prompt = options.prompt;
+    
+    if (options && Array.isArray(options.field_prompts) && options.field_prompts.length) {
+      body.field_prompts = options.field_prompts;
     }
     const url = `${API_URL}/project/${encodeURIComponent(projectId)}/documents/${encodeURIComponent(documentId)}/regenerate`;
-    const response = await axios.post(url, null, {
-      params,
-      headers: { accept: "application/json" },
+    const response = await axios.post(url, body, {
+      headers: { accept: "application/json", "Content-Type": "application/json" },
     });
     return response.data;
   } catch (error) {
