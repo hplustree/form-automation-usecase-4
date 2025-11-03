@@ -488,7 +488,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       setToast({ open: true, message: 'Failed to request regeneration', severity: 'error' });
     } finally {
       setRegenerating(prev => ({ ...prev, [docId]: false }));
-
+   
       // getProjectStatus();
     }
   };
@@ -1349,7 +1349,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                     variant="outlined"
                     startIcon={<AutorenewIcon />}
                     onClick={handleRegenerateAll}
-                    disabled={extractionResults.length === 0 || regeneratingAll}
+                    disabled={!isAllCompleted || regeneratingAll}
                     sx={{
                       textTransform: "none",
                       fontWeight: 600,
@@ -1589,7 +1589,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                       <IconButton
                                         size='small'
                                         onClick={() => openRegenPromptDialog(doc.doc_id || doc.id, header)}
-                                        disabled={Boolean(fieldRegenerating[`${doc.doc_id || doc.id}||${header}`])}
+                                        disabled={Boolean(fieldRegenerating[`${doc.doc_id || doc.id}||${header}`]) || normalizeStatus(statusByDoc[doc.doc_id || doc.id]) !== 'completed'}
                                         sx={{ p: 0.25 }}
                                       >
                                         {fieldRegenerating[`${doc.doc_id || doc.id}||${header}`] ? (
@@ -1895,7 +1895,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                             <IconButton
                               size="small"
                               onClick={() => handleRegenerate(item)}
-                              disabled={Boolean(regenerating[item.doc_id || item.id])}
+                              disabled={Boolean(regenerating[item.doc_id || item.id]) || normalizeStatus(item.status) !== 'completed'}
                               sx={{ ml: 0.5 }}
                             >
                               <AutorenewIcon fontSize="small" />
