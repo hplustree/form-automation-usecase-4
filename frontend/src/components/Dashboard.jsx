@@ -287,10 +287,10 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     // Optimistically set all to processing
     setStatusByDoc(prev => {
       const next = { ...prev };
-      docIds.forEach(id => { next[id] = 'processing'; });
+      docIds.forEach(id => { next[id] = 'analysing'; });
       return next;
     });
-    setDocStatus(prev => prev.map(d => (docIds.includes(d.doc_id || d.id)) ? { ...d, status: 'processing', progress: 0 } : d));
+    setDocStatus(prev => prev.map(d => (docIds.includes(d.doc_id || d.id)) ? { ...d, status: 'analysing', progress: 0 } : d));
 
     try {
       const body = { field_names: fieldNames };
@@ -368,8 +368,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     const key = `${docId}||${fieldName}`;
     setFieldRegenerating(prev => ({ ...prev, [key]: true }));
     // Optimistically set document to processing
-    setStatusByDoc(prev => ({ ...prev, [docId]: 'processing' }));
-    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
+    setStatusByDoc(prev => ({ ...prev, [docId]: 'analysing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'analysing', progress: 0 } : d));
     closeRegenPromptDialog();
     try {
       const body = {
@@ -399,8 +399,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     setFieldRegenerating(prev => ({ ...prev, [key]: true }));
 
     // Optimistically set document to processing
-    setStatusByDoc(prev => ({ ...prev, [documentId]: 'processing' }));
-    setDocStatus(prev => prev.map(d => (d.doc_id === documentId || d.id === documentId) ? { ...d, status: 'processing', progress: 0 } : d));
+    setStatusByDoc(prev => ({ ...prev, [documentId]: 'analysing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === documentId || d.id === documentId) ? { ...d, status: 'analysing', progress: 0 } : d));
 
     try {
       await regenerateDocument(selectedProjectId, documentId, [fieldName]);
@@ -451,8 +451,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     }
 
     // Optimistically set status to processing
-    setStatusByDoc(prev => ({ ...prev, [docId]: 'processing' }));
-    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'processing', progress: 0 } : d));
+    setStatusByDoc(prev => ({ ...prev, [docId]: 'analysing' }));
+    setDocStatus(prev => prev.map(d => (d.doc_id === docId || d.id === docId) ? { ...d, status: 'analysing', progress: 0 } : d));
 
     try {
       let fieldPrompts = [];
@@ -527,8 +527,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     try {
       const result = await getProjectDetails(selectedProjectId);
       const docs = Array.isArray(result?.documents) ? result.documents : [];
-
-      const rank = { pending: 0, processing: 1, completed: 2 };
+      const rank = { pending: 0, generating: 1, analysing: 1, completed: 2, failed: 2 };
       const merged = docs.map((d) => {
         const id = d.doc_id || d.id;
         const curr = normalizeStatus(d.status);
@@ -570,7 +569,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     return Array.from(allFields).sort();
   };
 
-  // Read selected headers from sessionStorage (by projectId > name > last created name)
+  // Read selected headers from sessionStorage. Prefer by projectId; fallback to project name pre-seed; then last created name
   const getSelectedHeaders = () => {
     try {
       let headers = [];
@@ -670,7 +669,9 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     if (!raw) return 'pending';
     const s = String(raw).toLowerCase().replace(/\s+/g, '_').replace(/-/g, '_');
     if (["completed","complete","processed","done","success","succeeded"].includes(s)) return "completed";
-    if (["processing","in_progress","running","queued","inprogress" , "chunks_ready"].includes(s)) return "processing";
+    if (["generating"].includes(s)) return "generating";
+    if (["analysing","analyzing"].includes(s)) return "analysing";
+    if (["failed","error","errored","failure"].includes(s)) return "failed";
     if (["pending","created","waiting","queued_pending"].includes(s)) return "pending";
     return 'pending';
   };
@@ -687,14 +688,33 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           fontWeight: 600,
         },
       },
-      processing: {
-        label: "Processing",
+      generating: {
+        label: "Generating",
         color: "warning",
         sx: {
           backgroundColor: theme.palette.warning.light,
           color: theme.palette.warning.dark,
           fontWeight: 600,
           animation: "pulse 2s infinite",
+        },
+      },
+      analysing: {
+        label: "Analysing",
+        color: "warning",
+        sx: {
+          backgroundColor: theme.palette.warning.light,
+          color: theme.palette.warning.dark,
+          fontWeight: 600,
+          animation: "pulse 2s infinite",
+        },
+      },
+      failed: {
+        label: "Failed",
+        color: "error",
+        sx: {
+          backgroundColor: theme.palette.error.light,
+          color: theme.palette.error.dark,
+          fontWeight: 600,
         },
       },
       pending: {
@@ -714,8 +734,8 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
       <Chip
         label={
           <Box sx={{ display: "flex", alignItems: "center", gap: 0.6 }}>
-            {status === "processing" && (
-              <CircularProgress size={12} thickness={5} color="warning" />
+            {( status === "generating" || status === "analysing") && (
+              <CircularProgress size={12} thickness={5} color={config.color} />
             )}
             {status === "completed" && (
               <CheckCircleOutlineOutlinedIcon
@@ -802,7 +822,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
 
   // Compute dynamic label for Processing tab
   const isAllCompleted = docStatus && docStatus.length > 0 && docStatus.every((d) => normalizeStatus(d.status) === 'completed');
-  const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
+  // const processingTabLabel = isAllCompleted ? 'Completed' : 'Processing';
 
   const startGlobalEdit = () => {
     setIsEditing(true);
@@ -1550,7 +1570,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                                 </Typography>
                                 {getSourcePages(doc, header).length > 0 && (
                                   <Box sx={{ mt: 0.5, display: 'flex', flexWrap: 'wrap', alignItems: 'center', columnGap: 0.5, rowGap: 0.5 }}>
-                                    <Typography variant='caption' sx={{ mr: 0.5, color: 'text.secondary' }}>Pages:</Typography>
+                                    <Typography variant='caption' sx={{ mr: 0.5, color: 'text.secondary' }}>Page No(s):</Typography>
                                     {getSourcePages(doc, header).map((p) => (
                                       <Button key={p} size='small' variant='text' onClick={() => handlePageClick(p)} sx={{ minWidth: 0, px: 1 }}>
                                         {p}
@@ -1905,7 +1925,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
                       </Box>
                     </Box>
 
-                    {normalizeStatus(item.status) === "processing" && (
+                    {(normalizeStatus(item.status) === "analysing" || normalizeStatus(item.status)) === "generating" && (
                       <Box sx={{ display: "flex", alignItems: "center", gap: 2 }}>
                         <LinearProgress
                           variant="determinate"
