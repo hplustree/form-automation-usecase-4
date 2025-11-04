@@ -168,18 +168,18 @@ def process_document(
     custom_prompts: dict = None,
     **kwargs
 ):
-    # Update document status to indicate processing has started
+    # Update document status to 'analysing' at the start of processing
     db = SessionLocal()
     try:
         if is_regeneration:
             DocumentOperations.update_document_status(
-                db, document_id, "regenerating",
-                error_message="Regenerating fields..."
+                db, document_id, "generating",
+                status_message="Re-analyzing document and preparing chunks..."
             )
         else:
             DocumentOperations.update_document_status(
-                db, document_id, "processing",
-                error_message="Processing document..."
+                db, document_id, "analysing",
+                status_message="Analyzing document and preparing chunks..."
             )
     except Exception as e:
         logger.error(f"Error updating document status: {str(e)}")
@@ -246,7 +246,7 @@ def process_document(
             return
         
         # Update document status
-        DocumentOperations.update_document_status(db, document_id, "processing")
+        DocumentOperations.update_document_status(db, document_id, "analysing")
 
         # Initialize services
         services = init_services()
@@ -488,7 +488,6 @@ def process_document(
             # Mark document as chunks_ready in queue (for chunk processing)
             DocumentQueueOperations.complete_document(db, document_id, "chunks_ready")
             
-            # Process field extraction tasks for this document
             # Get the requested field names from either the function parameter or project metadata
             requested_fields = field_names or []
             if not requested_fields and project.metadata and 'requested_fields' in project.metadata:
@@ -496,6 +495,14 @@ def process_document(
             
             # Get the fields configuration from the project
             fields_config = project.fields_config or []
+            
+            # Update document status to 'generating' when chunks are ready and fields are loaded
+            DocumentOperations.update_document_status(
+                db, document_id, "generating",
+                status_message=f"Chunks ready. Starting field extraction for {len(fields_config)} fields..."
+            )
+            
+            # Process field extraction tasks for this document
             
             # If no specific fields are requested, process all fields
             if not requested_fields:
@@ -884,6 +891,11 @@ def process_field(document_id: str, project_id: str, field_name: str, field_conf
     
     db = SessionLocal()
     try:
+        # Update document status to 'analysing' at the start of processing
+        DocumentOperations.update_document_status(
+            db, document_id, "generating", 
+            status_message="Document is being analyzed and chunked"
+        )
         # Get the field queue entry
         field_entry = db.query(FieldQueue).filter(
             FieldQueue.document_id == document_id,
@@ -1226,6 +1238,14 @@ def check_and_update_document_status(db: Session, document_id: str, project_id: 
     """
     Check if all fields for a document are processed and update document status accordingly.
     This function is idempotent and can be safely called multiple times.
+    
+    Status flow:
+    - 'queued': Initial state when document is first uploaded
+    - 'analysing': Document is being processed (chunking, embedding, etc.)
+    - 'generating': Chunks are ready, field extraction in progress
+    - 'completed': All fields processed successfully
+    - 'completed_with_errors': Some fields failed but processing is complete
+    - 'failed': Critical failure in processing
     """
     """
     Finalize a document once all field queue entries are resolved, even if some fields failed.
