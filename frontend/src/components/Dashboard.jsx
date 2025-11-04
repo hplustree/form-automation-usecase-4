@@ -527,7 +527,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     try {
       const result = await getProjectDetails(selectedProjectId);
       const docs = Array.isArray(result?.documents) ? result.documents : [];
-      const rank = { pending: 0, generating: 1, analysing: 1, completed: 2 };
+      const rank = { pending: 0, generating: 1, analysing: 1, completed: 2, failed: 2 };
       const merged = docs.map((d) => {
         const id = d.doc_id || d.id;
         const curr = normalizeStatus(d.status);
@@ -671,6 +671,7 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
     if (["completed","complete","processed","done","success","succeeded"].includes(s)) return "completed";
     if (["generating"].includes(s)) return "generating";
     if (["analysing","analyzing"].includes(s)) return "analysing";
+    if (["failed","error","errored","failure"].includes(s)) return "failed";
     if (["pending","created","waiting","queued_pending"].includes(s)) return "pending";
     return 'pending';
   };
@@ -705,6 +706,15 @@ const Dashboard = ({ selectedProject, onMenuClick, selectedProjectId }) => {
           color: theme.palette.warning.dark,
           fontWeight: 600,
           animation: "pulse 2s infinite",
+        },
+      },
+      failed: {
+        label: "Failed",
+        color: "error",
+        sx: {
+          backgroundColor: theme.palette.error.light,
+          color: theme.palette.error.dark,
+          fontWeight: 600,
         },
       },
       pending: {
